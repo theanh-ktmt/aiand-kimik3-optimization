@@ -152,7 +152,8 @@ fi
 
 echo "== bash syntax =="
 for f in "$REPO_ROOT"/common.sh "$REPO_ROOT"/run.sh "$REPO_ROOT"/run_all.sh \
-         "$REPO_ROOT"/run_final.sh "$REPO_ROOT"/bench/bench.sh \
+         "$REPO_ROOT"/run_final.sh "$REPO_ROOT"/run_spec_sweep.sh \
+         "$REPO_ROOT"/bench/bench.sh \
          "$REPO_ROOT"/bench/get_sharegpt.sh "$REPO_ROOT"/eval/quality_check.sh \
          "$REPO_ROOT"/servers/*.sh; do
     bash -n "$f" 2>/dev/null && ok "$(basename "$f")" || bad "syntax: $f"
