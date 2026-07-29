@@ -1,0 +1,3 @@
+[submodule "third_party/InferenceX"]
+	path = third_party/InferenceX
+	url = https://github.com/SemiAnalysisAI/InferenceX.git

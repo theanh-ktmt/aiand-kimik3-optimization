@@ -1,0 +1,7 @@
+# These scripts run on Linux (B300 nodes). Force LF so bash/python don't choke
+# on CRLF (\r) line endings when authored on Windows.
+*.sh   text eol=lf
+*.py   text eol=lf
+*.md   text eol=lf
+.gitmodules text eol=lf
+.env.example text eol=lf

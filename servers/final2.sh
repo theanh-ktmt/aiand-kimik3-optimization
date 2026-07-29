@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# ---------------------------------------------------------------------------
+# final2 — Proposed config #2 (DP8EP base, aimed at the high-concurrency end).
+#
+# PLACEHOLDER, same rule as final1: replace every [SCREEN] line with the winner
+# from results/all.csv before quoting these numbers anywhere.
+#
+# It starts from flashinfer_nvlink_one_sided + deep_gemm_mega_moe because those
+# are the recipe's own explicit recommendations for an NVLink expert-parallel
+# deployment, so they are a documented starting hypothesis rather than a guess.
+#
+# NOTE: the recipe treats DEP as a >=16-GPU strategy (strategy_min_gpus
+# multi_node_dep: 16); on one node this is exploratory. VALIDATE with
+# `bash run.sh final2 subset` before committing to the full run.
+# ---------------------------------------------------------------------------
+source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
+CONFIG="final2"
+BENCH_MODE="spec"
+export VLLM_USE_DEEP_GEMM=1
+export VLLM_USE_V2_MODEL_RUNNER="${VLLM_USE_V2_MODEL_RUNNER:-1}"    # [SCREEN] opt11a
+MOE_BACKEND="deep_gemm_mega_moe"                                    # [SCREEN] opt04a
+k3_base_args
+SERVE_ARGS=(
+    "${K3_BASE_ARGS[@]}"
+    --data-parallel-size 8
+    --enable-expert-parallel
+    --all2all-backend flashinfer_nvlink_one_sided                    # [SCREEN] opt05a
+    --no-disable-hybrid-kv-cache-manager                             # [SCREEN] opt03e
+    --max-num-batched-tokens 16384                                   # [SCREEN] opt02b
+    --max-num-seqs 128                                               # [SCREEN] opt02a
+    --speculative-config "$(dspark_config "${FINAL2_SPEC:-3}")"      # [SCREEN] opt08*
+)
+serve_main
