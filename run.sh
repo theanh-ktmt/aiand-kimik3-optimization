@@ -12,7 +12,7 @@
 # Usage:
 #   bash run.sh baseline full               # full sweep (conc 1..128)
 #   bash run.sh opt05_linear_flashinfer     # subset sweep (conc 1,16,128) for trials
-#   DATASETS=sharegpt bash run.sh opt13_mtp_kimik3 full
+#   CONFIG_LABEL=spec_dspark_5 SPEC_METHOD=dspark SPEC_TOKENS=5 bash run.sh spec
 #
 # Positional args:
 #   $1  config name = servers/<name>.sh   (required)
@@ -35,6 +35,14 @@ export DATASETS="${DATASETS:-}"     # empty = derive from the config BENCH_MODE
 NAME="${NAME%.sh}"; NAME="${NAME#servers/}"
 SCRIPT="$REPO_ROOT/servers/$NAME.sh"
 [[ -f "$SCRIPT" ]] || { echo "ERROR: no such config: $SCRIPT"; exit 1; }
+
+# CONFIG_LABEL decouples the results label from the script name, so ONE
+# parameterized script can produce many labelled runs. run_spec_sweep.sh uses it:
+#   CONFIG_LABEL=spec_dspark_5 SPEC_METHOD=dspark SPEC_TOKENS=5 bash run.sh spec
+# Every servers/*.sh reads CONFIG as ${CONFIG:-<own name>}, so the exported label
+# wins and results land in results/<label>/.
+LABEL="${CONFIG_LABEL:-$NAME}"
+export CONFIG="$LABEL"
 
 # --- Upfront W&B readiness check -------------------------------------------
 # Warn NOW (before a possibly hours-long sweep) if results won't reach W&B,
@@ -60,22 +68,22 @@ if [[ "$DATASETS" != "random" ]]; then
     bash "$REPO_ROOT/bench/get_sharegpt.sh" || { echo "ERROR: ShareGPT unavailable"; exit 1; }
 fi
 
-echo "### RUN $NAME (sweep=$SWEEP datasets=${DATASETS:-auto}) ###"
+echo "### RUN $NAME as '$LABEL' (sweep=$SWEEP datasets=${DATASETS:-auto}) ###"
 RUN_BENCH=1 SWEEP="$SWEEP" DATASETS="$DATASETS" bash "$SCRIPT"
 
-echo "### AGGREGATE $NAME ###"
-CSV="$REPO_ROOT/results/$NAME.csv"
-python3 "$REPO_ROOT/aggregate.py" "$REPO_ROOT/results/$NAME" --config "$NAME" --out "$CSV"
-echo "CSV: results/$NAME.csv"
+echo "### AGGREGATE $LABEL ###"
+CSV="$REPO_ROOT/results/$LABEL.csv"
+python3 "$REPO_ROOT/aggregate.py" "$REPO_ROOT/results/$LABEL" --config "$LABEL" --out "$CSV"
+echo "CSV: results/$LABEL.csv"
 
 # --- Durability: push results off this (ephemeral) box ---------------------
 if [[ "${WANDB:-1}" != "0" ]]; then
     echo "### W&B SYNC $NAME ###"
     python3 -c "import wandb" 2>/dev/null || pip install -q wandb 2>/dev/null || true
-    python3 "$REPO_ROOT/wandb_sync.py" --config "$NAME" --sweep "$SWEEP"; rc=$?
+    python3 "$REPO_ROOT/wandb_sync.py" --config "$LABEL" --sweep "$SWEEP"; rc=$?
     case "$rc" in
-        0) echo "W&B: synced $NAME OK" ;;
-        3) echo "!! W&B: SKIPPED $NAME (results NOT in W&B - see banner above)" ;;
-        *) echo "!! W&B: FAILED $NAME (rc=$rc - see error above; results NOT in W&B)" ;;
+        0) echo "W&B: synced $LABEL OK" ;;
+        3) echo "!! W&B: SKIPPED $LABEL (results NOT in W&B - see banner above)" ;;
+        *) echo "!! W&B: FAILED $LABEL (rc=$rc - see error above; results NOT in W&B)" ;;
     esac
 fi

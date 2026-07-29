@@ -19,7 +19,7 @@
 # if prefill turns out to be launch-bound too.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="opt16_cudagraph_decode_only"
+CONFIG="${CONFIG:-opt16_cudagraph_decode_only}"
 BENCH_MODE="mtp"
 k3_base_args
 SERVE_ARGS=(

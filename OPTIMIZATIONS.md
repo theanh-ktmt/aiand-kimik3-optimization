@@ -51,7 +51,7 @@ Five consequences drive the sweep:
 | "`--language-model-only` drops MoonViT-V2 and frees VRAM" | The help says only: "disables all multimodal inputs by setting all modality limits to 0. Equivalent to `--limit-mm-per-prompt` 0 for every modality." It removes multimodal profiling and scheduler branches; it does **not** promise the encoder weights are skipped. Any VRAM saving must be measured. |
 | "add `compile_mm_encoder: false`" | Already `False` by default — the proposal was a no-op. Dropped. |
 
-## The screening list (19 configs)
+## The screening list (20 configs + the spec sweep)
 
 Ordered as `run_all.sh` runs them.
 
@@ -130,21 +130,29 @@ profile.
 * `opt11_dbo` — dual-batch overlap: hide the all2all behind the other
   micro-batch's GEMMs. With 896 experts there is a lot to hide.
 
-### 12–14. Speculative decoding  ← the question the campaign exists to answer
+### Speculative decoding — a full sweep, not a config  ← the campaign's real question
 
-| config | mechanism |
-|---|---|
-| `ref_nonmtp` | none |
-| `opt13_mtp_kimik3` | **in-model MTP head** (`kimi_k3_mtp`) — no draft weights, no extra VRAM |
-| `baseline` (7) / `opt12_dspark3` (3) | external DSpark draft model |
-| `opt14_spec_disable_bs64` | DSpark(7) for batch 1–64, **off** above 64 |
+The token count dominates performance and its optimum is not knowable up front, so
+it gets `servers/spec.sh` (parameterized) plus `run_spec_sweep.sh` instead of a
+hand-picked point:
 
-`opt14` encodes the core trade-off: spec decoding is a latency win at small batch
-and a throughput **tax** once the GPU is saturated, because every rejected draft
-token is compute a real request could have used.
+| | mechanism | draft weights |
+|---|---|---|
+| `ref_nonmtp` / `spec_none` | none | — |
+| `spec_kimi_k3_mtp_<1..8>` | **in-model MTP head** — no draft weights, no extra VRAM | none |
+| `spec_dspark_<1..8>` / `baseline` (7) | external DSpark draft model | `Inferact/Kimi-K3-DSpark` |
+| `opt14_spec_disable_bs64` | DSpark(7) for batch 1–64, **off** above 64 | as above |
 
-Read all four against the **`Accept len`** column (mean accepted tokens per draft
-step, scraped from `/metrics` per cell), not throughput alone.
+`opt14` encodes the core trade-off discretely: spec decoding is a latency win at
+small batch and a throughput **tax** once the GPU is saturated, because every
+rejected draft token is compute a real request could have used. The sweep measures
+the same trade-off continuously, and it is why acceptance must be read alongside
+throughput — acceptance can keep climbing while throughput falls, which means the
+verify step, not the drafting, has become the bottleneck.
+
+This mirrors InferenceX's own K3 collector (`MTP_LIST="1 2 3 4 5 6 7 8"`, one server
+per value, `AL = 1 + accepted/drafts` from `/metrics`), extended with
+per-concurrency throughput and with the second mechanism.
 
 ### 15–18. Runtime
 
@@ -154,9 +162,13 @@ step, scraped from `/metrics` per cell), not throughput alone.
 * `opt16_cudagraph_decode_only` — `FULL_DECODE_ONLY`, what the recipe's own decode
   workers use. Valid modes: `NONE, PIECEWISE, FULL, FULL_DECODE_ONLY,
   FULL_AND_PIECEWISE`.
-* `opt17_v2_runner_rust` — Model Runner v2 + Rust frontend, both of which the
-  recipe says "fully support this model and can be enabled if needed". Bundled into
-  one config; split only if the bundle regresses.
+* `opt17_no_v2_runner_rust` — Model Runner v2 + Rust frontend **OFF**. Both are in
+  the base preset, so switching them on would be a no-op; the informative direction
+  is off, which prices what the preset is buying. Split into two runs if the bundle
+  regresses.
+* `opt20_no_tail_fusion`, `opt21_no_flashinfer_allreduce`, `opt22_gpumem090` — the
+  remaining base-preset items, each tested by skipping it or using a different value.
+  See the preset table in README.
 * `opt18_language_model_only` — text-only serving. See the correction above for
   what it actually does.
 
@@ -201,14 +213,13 @@ is lost — only the cost of a separate 1.4 TB server load.
 | Cut | Why |
 |---|---|
 | `opt01c_tp4dp2ep` (TP4×DP2) | TP8 and DP8 bracket the space; a hybrid only matters if both extremes are close |
-| `--gpu-memory-utilization 0.97` | ~2 pts of headroom, real OOM risk at conc=128, low upside next to `--max-num-seqs` |
+| `--gpu-memory-utilization 0.97` | ~2 pts of headroom, real OOM risk at conc=128, low upside next to `--max-num-seqs`. The *downward* direction (0.90, what InferenceX runs) is tested instead, as `opt22` |
 | `--kv-cache-dtype auto` (bf16) | doubles KV footprint; expected to lose, and FP8 KV is what the recipe validated |
 | MoE `flashinfer_trtllm` / `cutlass` / `triton` | the recipe names one recommended backend; the rest are fallbacks, reachable via `MOE_BACKEND=` |
 | 5 of 6 all2all backends | one node is all-NVLink, so the recipe's NVLink pick is the only strong candidate; reachable via `A2A_BACKEND=` |
-| `VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION=0` | the recipe turns it on for every NVIDIA target; disabling it is a debugging tool, not a candidate |
-| `VLLM_ALLREDUCE_USE_FLASHINFER=0` | same |
 | `VLLM_USE_FLASHINFER_SAMPLER=1` | plausible (160K vocab) but small next to the kernel/batching knobs |
-| DSpark 1 / 5 / 9, `draft_sample_method greedy` | 3 vs 7 vs batch-gated brackets the curve; extra points are `SPEC_TOKENS=`/`DRAFT_SAMPLE_METHOD=` runs |
+| fixed DSpark points (the old opt12 / opt13) | replaced by `run_spec_sweep.sh`, which sweeps 1..8 for both mechanisms — strictly more informative at the same per-launch cost |
+| `draft_sample_method greedy` | one extra `DRAFT_SAMPLE_METHOD=greedy` run on top of the winning token count |
 | `cudagraph_mode FULL_AND_PIECEWISE` | reachable via `CUDAGRAPH_MODE=` |
 | Model Runner v2 and Rust frontend separately | bundled in `opt17` |
 

@@ -40,6 +40,40 @@ recipe on several points — the full diff is in
 | Modality | native multimodal (MoonViT-V2, 401M) |
 | Min hardware | recipe `vram_minimum_gb: 1680`; 8x B300 = 2304 GiB → fits one node |
 
+## The base preset (already ON — do not "optimize into" it)
+
+This is the team's docker launch command. Everything in it is inherited by every
+config in this repo via `common.sh`, so for these items the useful experiment is
+to **skip it** or use a **different value**, never to switch it on:
+
+```
+-e VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION=1   -e VLLM_ALLREDUCE_USE_FLASHINFER=1
+-e VLLM_ENGINE_READY_TIMEOUT_S=3600          -e VLLM_USE_V2_MODEL_RUNNER=1
+-e VLLM_USE_RUST_FRONTEND=1
+--trust-remote-code --load-format fastsafetensors --moe-backend auto
+--gpu-memory-utilization 0.95 --tensor-parallel-size 8 --kv-cache-dtype fp8
+--attention-config '{"mla_prefill_backend":"TRTLLM_RAGGED","use_prefill_query_quantization":true}'
+--enable-auto-tool-choice --tool-call-parser kimi_k3 --reasoning-parser kimi_k3
+```
+
+Which configs test which preset item, and in which direction:
+
+| Preset item | Config | Direction |
+|---|---|---|
+| `VLLM_USE_V2_MODEL_RUNNER` + `VLLM_USE_RUST_FRONTEND` | `opt17_no_v2_runner_rust` | **off** |
+| `VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION` | `opt20_no_tail_fusion` | **off** |
+| `VLLM_ALLREDUCE_USE_FLASHINFER` | `opt21_no_flashinfer_allreduce` | **off** |
+| `--gpu-memory-utilization 0.95` | `opt22_gpumem090` | different value (InferenceX uses 0.90) |
+| `--moe-backend auto` | `opt07_moe_deepgemm_mega` | different value |
+| `--attention-config mla_prefill_backend` | `opt19_mla_prefill_flashinfer` | different value |
+| `--tensor-parallel-size 8` | `opt01`, `opt02` | different parallelism |
+| the whole preset with no drafting | `ref_nonmtp` | the preset itself, verbatim |
+
+Two deliberate deviations from the preset, applied uniformly:
+`--enable-prefix-caching` is forced **off** (team decision — cache hits would mask
+prefill cost) and `--max-model-len` is **16384** not 1048576, so KV capacity is not
+the variable under test.
+
 ## Benchmark method
 
 ### Two dataset lanes, decided by the config's bench mode
@@ -88,6 +122,40 @@ Jinja vs K3's XTML chat rendering.
 - ShareGPT input length comes from the dataset (prompts filtered to ≤ 4096 tokens
   by default), so the CSV reports the real `Mean ISL tok` per cell.
 
+## Speculative decoding gets a real sweep, not a point
+
+The token count moves performance more than anything else here, so it is not one
+config — it is `servers/spec.sh` (parameterized) driven by `run_spec_sweep.sh`:
+
+```bash
+bash run_spec_sweep.sh                              # dspark 1..8 + kimi_k3_mtp 1..8
+SPEC_TOKENS_LIST="1 3 5 7" bash run_spec_sweep.sh    # find the shape first (cheaper)
+SPEC_METHODS=dspark bash run_spec_sweep.sh           # one mechanism only
+INCLUDE_NONE=1 bash run_spec_sweep.sh                # add the no-drafting floor
+```
+
+Each point is its own server launch (the token count is a serve flag), its own
+`results/spec_<method>_<n>/` directory and its own W&B run, via `CONFIG_LABEL`.
+At the end it prints the curve that decides the question:
+
+```
+  dataset=sharegpt   (AL = mean accepted tokens per draft step; tput = output tok/s)
+    method        tok                c16
+    dspark          1   AL 1.55/     644
+    dspark          3   AL 2.65/    1012      <- throughput peak
+    dspark          7   AL 4.60/     791      <- higher acceptance, LOWER throughput
+```
+
+That last row is the whole point: acceptance keeps climbing while throughput falls,
+because the verify step has become the bottleneck. Reading throughput alone would
+have picked the wrong token count. **Trust the `sharegpt` table, not `random`** —
+acceptance on synthetic tokens is an artifact.
+
+Two mechanisms are swept because `--spec-method` accepts both `dspark` (external
+Inferact draft model) and `kimi_k3_mtp` (in-model head, no draft weights, no extra
+draft VRAM). `INCLUDE_NONE=1` adds `spec_none`, which is the fairest floor because
+it keeps `--max-num-seqs 32` — only the drafting is removed.
+
 ### Speculative-decoding acceptance is measured, not inferred
 
 `bench.sh` scrapes vLLM's `vllm:spec_decode_*` counters from `/metrics` before and
@@ -112,8 +180,9 @@ Tracked metrics: **Output throughput**, **TTFT** (mean/median/P90), **TPOT**
 ```
 common.sh            shared config + mandatory flags + K3 recipe base block +
                      dspark_config() / kimi_k3_mtp_config() + server lifecycle
-servers/*.sh         one launch script per configuration (baseline + 19 opts +
-                     ref_nonmtp + 2 final placeholders = 23)
+servers/*.sh         one launch script per configuration (baseline + 20 opts +
+                     spec.sh + ref_nonmtp + 2 final placeholders = 25)
+run_spec_sweep.sh    sweep the speculative-decoding token count + AL curve
 bench/bench.sh       the sweep: random lane (+ ShareGPT lane for mtp configs)
 bench/sharegpt_client.py  InferenceX client with a ShareGPT prompt source
 bench/get_sharegpt.sh     fetch the ShareGPT V3 dataset
@@ -147,8 +216,8 @@ bash preflight.sh             # exit 0 = good to go
 Run inside the **`vllm/vllm-openai:kimi-k3`** container on a B300 node. Optional:
 pre-stage weights and `export MODEL_PATH=/path/to/Kimi-K3` to skip the ~1.4 TB HF
 download. DSpark configs also need `Inferact/Kimi-K3-DSpark` (vLLM fetches it into
-`--download-dir`, or set `DRAFT_MODEL_PATH`); `opt13_mtp_kimik3` and `ref_nonmtp`
-do not.
+`--download-dir`, or set `DRAFT_MODEL_PATH`); the `kimi_k3_mtp` points of the spec
+sweep and `ref_nonmtp` do not.
 
 `preflight.sh` checks, without loading the model: tools, vLLM ≥ 0.27.0, GPU count
 *and aggregate VRAM vs the 1680 GiB minimum*, disk space for 1.4 TB, ShareGPT
@@ -165,7 +234,7 @@ answer, not a substring grep), the exact enum values passed, the
 ```bash
 bash run.sh baseline full                # full sweep, both lanes
 bash run.sh opt05_linear_flashinfer      # subset sweep (default) for screening
-DATASETS=sharegpt bash run.sh opt13_mtp_kimik3 full   # one lane only
+DATASETS=sharegpt bash run.sh opt05_linear_flashinfer full   # one lane only
 ```
 
 ### Manual (launch + benchmark in separate shells)
@@ -243,8 +312,9 @@ Each config writes everything to `results/<config>/`:
 2. Screen each optimization with a **SUBSET** sweep and compare to baseline.
    Decide parallelism (`opt01`/`opt02`) first — `opt09`/`opt10`/`opt11` are only
    worth running if DP8EP beat TP8.
-3. Settle the spec-decoding question with `ref_nonmtp` vs `opt13_mtp_kimik3` vs
-   `baseline`/`opt12`/`opt14`, reading `Accept len` alongside throughput.
+3. Settle the spec-decoding question with `bash run_spec_sweep.sh` (both
+   mechanisms, token counts 1..8) plus `ref_nonmtp` as the floor and `opt14` for
+   the batch-gated variant. Read the printed AL curve, not throughput alone.
 4. Collect the winners into `servers/final1.sh` / `final2.sh` (replace every
    `[SCREEN]` line) and run `run_final.sh` (FULL).
 5. Run `eval/quality_check.sh` on each final config vs baseline.
@@ -268,8 +338,9 @@ Each config writes everything to `results/<config>/`:
 ## Known caveats
 
 - **DSpark draft model.** `Inferact/Kimi-K3-DSpark` must be downloadable (or
-  pre-staged at `DRAFT_MODEL_PATH`), or every config except `ref_nonmtp` and
-  `opt13_mtp_kimik3` fails at startup.
+  pre-staged at `DRAFT_MODEL_PATH`), or every config fails at startup except
+  `ref_nonmtp` and the `spec_kimi_k3_mtp_*` / `spec_none` points, which use the
+  in-model head or no drafting at all.
 - **Chat rendering.** Both lanes wrap prompts with InferenceX's
   `tokenizer.apply_chat_template` (Jinja). K3 also has a non-Jinja path
   (`--tokenizer-mode kimi_k3`). If Jinja is wrong for K3 the error is *systematic

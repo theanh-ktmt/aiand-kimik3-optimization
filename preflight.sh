@@ -61,7 +61,7 @@ DRAFT_MODEL="${DRAFT_MODEL:-Inferact/Kimi-K3-DSpark}"
 DOWNLOAD_DIR="${DOWNLOAD_DIR:-/workspace/models}"
 echo "  MODEL=$MODEL"
 echo "  DRAFT_MODEL=$DRAFT_MODEL  (DSpark; needed by every config except ref_nonmtp"
-echo "                             and opt13_mtp_kimik3, which uses the in-model head)"
+echo "                             and the spec_kimi_k3_mtp_* / spec_none sweep points)"
 if [[ -n "${MODEL_PATH:-}" ]]; then
     echo "  MODEL_PATH=$MODEL_PATH  (the weights the server will actually load)"
     if [[ -d "$MODEL_PATH" && -n "$(ls -A "$MODEL_PATH" 2>/dev/null)" ]]; then

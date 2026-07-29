@@ -14,10 +14,9 @@
 # `bash run.sh final2 subset` before committing to the full run.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="final2"
+CONFIG="${CONFIG:-final2}"
 BENCH_MODE="mtp"
 export VLLM_USE_DEEP_GEMM=1
-export VLLM_USE_V2_MODEL_RUNNER="${VLLM_USE_V2_MODEL_RUNNER:-1}"     # [SCREEN] opt17
 MOE_BACKEND="${MOE_BACKEND:-deep_gemm_mega_moe}"                     # [SCREEN] opt07
 k3_base_args
 SERVE_ARGS=(
@@ -30,6 +29,6 @@ SERVE_ARGS=(
     --no-disable-hybrid-kv-cache-manager                              # [SCREEN] opt08
     --max-num-batched-tokens 16384                                    # [SCREEN] opt03
     --max-num-seqs 128                                                # [SCREEN] opt03
-    --speculative-config "$(dspark_config "${FINAL2_SPEC:-3}")"       # [SCREEN] opt12/13
+    --speculative-config "$(spec_config "${FINAL2_SPEC_METHOD:-dspark}" "${FINAL2_SPEC:-3}")"  # [SCREEN] run_spec_sweep
 )
 serve_main

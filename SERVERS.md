@@ -1,7 +1,8 @@
 # Server scripts
 
-20 configs (baseline + 19 optimizations + a non-MTP reference + 2 final
-placeholders), trimmed to the knobs with real expected value — see
+25 scripts: baseline + 20 optimizations + `spec.sh` (the parameterized
+speculative-decoding sweep) + a non-MTP reference + 2 final placeholders. Trimmed
+to the knobs with real expected value — see
 [`OPTIMIZATIONS.md`](OPTIMIZATIONS.md) for what was cut and why.
 
 Every script carries:
@@ -62,14 +63,16 @@ speculative decoding. The two `mtp` lanes are separate rows in the CSV
 | 9 | `opt09_a2a_nvlink_one_sided.sh` | (DP8EP) All2All | `--all2all-backend flashinfer_nvlink_one_sided` | mtp |
 | 10 | `opt10_eplb.sh` | (DP8EP) Expert load balancing | `--enable-eplb --eplb-config '{…,"num_redundant_experts":${EPLB_REDUNDANT:-32}}' --expert-placement-strategy` | mtp |
 | 11 | `opt11_dbo.sh` | (DP8EP) Dual-batch overlap | `--enable-dbo --dbo-decode-token-threshold … --dbo-prefill-token-threshold …` | mtp |
-| 12 | `opt12_dspark3.sh` | DSpark token count | DSpark(3) instead of DSpark(7) | mtp |
-| 13 | `opt13_mtp_kimik3.sh` | **In-model MTP instead of DSpark** | `K3MTP(3)` — `--spec-method kimi_k3_mtp` | mtp |
+| — | `spec.sh` | **Speculative-decoding sweep** (parameterized) | `SPEC_METHOD` = dspark / kimi_k3_mtp / none, times `SPEC_TOKENS=n`; driven by `run_spec_sweep.sh`, one label per point | mtp (nonmtp when none) |
 | 14 | `opt14_spec_disable_bs64.sh` | Batch-gated spec decoding | DSpark(7) for batch 1–64, off above 64 | mtp |
 | 15 | `opt15_async_scheduling.sh` | Scheduler | `--async-scheduling` | mtp |
 | 16 | `opt16_cudagraph_decode_only.sh` | CUDA graph | `--compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' --max-num-seqs 128 --max-cudagraph-capture-size 128` | mtp |
-| 17 | `opt17_v2_runner_rust.sh` | Engine + frontend | `VLLM_USE_V2_MODEL_RUNNER=1` + `VLLM_USE_RUST_FRONTEND=1` | mtp |
+| 17 | `opt17_no_v2_runner_rust.sh` | Engine + frontend **OFF** (both are in the base preset) | `VLLM_USE_V2_MODEL_RUNNER=0` + `VLLM_USE_RUST_FRONTEND=0` | mtp |
+| 20 | `opt20_no_tail_fusion.sh` | LatentMoE tail fusion **OFF** | `VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION=0` | mtp |
+| 21 | `opt21_no_flashinfer_allreduce.sh` | FlashInfer allreduce **OFF** | `VLLM_ALLREDUCE_USE_FLASHINFER=0` | mtp |
+| 22 | `opt22_gpumem090.sh` | GPU memory fraction | `--gpu-memory-utilization 0.90` (preset is 0.95; InferenceX uses 0.90) | mtp |
 | 18 | `opt18_language_model_only.sh` | Skip multimodal path | `--language-model-only` | mtp |
-| — | `ref_nonmtp.sh` | Reference | no `--speculative-config`; `--max-num-seqs 128` | **nonmtp** |
+| — | `ref_nonmtp.sh` | **The base preset verbatim** — no drafting, no `--max-num-seqs` | (preset only) | **nonmtp** |
 | — | `final1.sh` | **Proposed #1 (TP8)** — placeholder | KDA FLASHINFER + hybrid KV + async sched + batching + DSpark(3) + Model Runner v2 | mtp |
 | — | `final2.sh` | **Proposed #2 (DP8EP)** — placeholder | as final1 but DP8EP + `flashinfer_nvlink_one_sided` + `deep_gemm_mega_moe` | mtp |
 
@@ -86,9 +89,14 @@ This is the question the campaign exists to answer, and it needs three configs:
 
 | | mechanism | draft weights |
 |---|---|---|
-| `ref_nonmtp` | none | — |
-| `opt13_mtp_kimik3` | in-model MTP head (`kimi_k3_mtp`) | none |
-| `baseline` / `opt12` / `opt14` | external draft model (`dspark`) | `Inferact/Kimi-K3-DSpark` |
+| `ref_nonmtp` (or `spec_none`) | none | — |
+| `spec_kimi_k3_mtp_<n>` | in-model MTP head (`kimi_k3_mtp`) | none |
+| `baseline` / `spec_dspark_<n>` / `opt14` | external draft model (`dspark`) | `Inferact/Kimi-K3-DSpark` |
+
+Run it with `bash run_spec_sweep.sh` — it sweeps the token count for both
+mechanisms and prints the acceptance-length-vs-throughput curve. `spec_none` is the
+strictest floor (identical config, drafting removed); `ref_nonmtp` is the base
+preset itself.
 
 Read them against the **`Accept len`** column in the CSV (mean accepted tokens
 per draft step, scraped from `/metrics` around each cell and stored in
@@ -157,7 +165,16 @@ applies — opt in with `RUN_MMMU=1`. `quality_check.sh` refuses to run it again
 
 Adjust values inline or via the env vars shown (`EPLB_REDUNDANT`, `SPEC_TOKENS`,
 `MAMBA_BACKEND`, `ATTN_BACKEND`, `A2A_BACKEND`, `PERF_MODE`, `CUDAGRAPH_MODE`,
-the DBO thresholds, `FINAL1_SPEC`), sweep, keep the winners.
+`SPEC_METHOD` / `SPEC_TOKENS`, the DBO thresholds, `FINAL1_SPEC_METHOD` /
+`FINAL1_SPEC`), sweep, keep the winners.
+
+`CONFIG_LABEL` lets one script produce many labelled runs — that is how
+`run_spec_sweep.sh` gets a separate results dir and W&B run per token count out of a
+single `spec.sh`:
+
+```bash
+CONFIG_LABEL=spec_dspark_5 SPEC_METHOD=dspark SPEC_TOKENS=5 bash run.sh spec subset
+```
 
 Server startup is bounded by `SERVER_STARTUP_TIMEOUT` (default **3600s = 60 min**,
 matching the recipe's own `VLLM_ENGINE_READY_TIMEOUT_S`). Loading ~1.4 TB of MXFP4

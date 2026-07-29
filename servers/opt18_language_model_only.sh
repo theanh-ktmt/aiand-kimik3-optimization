@@ -17,7 +17,7 @@
 # (eval/quality_check.sh refuses RUN_MMMU=1 against it). Do not set SMOKE_TEST_MM=1.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="opt18_language_model_only"
+CONFIG="${CONFIG:-opt18_language_model_only}"
 BENCH_MODE="mtp"
 k3_base_args
 SERVE_ARGS=(

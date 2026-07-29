@@ -19,7 +19,7 @@
 # 16384 batched tokens matches the recipe own TEP prefill profile.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="opt03_hyperparams"
+CONFIG="${CONFIG:-opt03_hyperparams}"
 BENCH_MODE="mtp"
 k3_base_args
 SERVE_ARGS=(

@@ -16,6 +16,23 @@
 # Source of truth for the base config:
 #   https://recipes.vllm.ai/moonshotai/Kimi-K3
 #   (vllm-project/recipes -> models/moonshotai/Kimi-K3.yaml)
+#
+# THE BASE PRESET (the team's docker launch command) — everything here is already
+# ON for every config in this repo, so it is NOT something to "optimize into":
+#   env  VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION=1  VLLM_ALLREDUCE_USE_FLASHINFER=1
+#        VLLM_ENGINE_READY_TIMEOUT_S=3600  VLLM_USE_V2_MODEL_RUNNER=1
+#        VLLM_USE_RUST_FRONTEND=1
+#   args --trust-remote-code --load-format fastsafetensors --moe-backend auto
+#        --gpu-memory-utilization 0.95 --tensor-parallel-size 8 --kv-cache-dtype fp8
+#        --attention-config '{"mla_prefill_backend":"TRTLLM_RAGGED",
+#                             "use_prefill_query_quantization":true}'
+#        --enable-auto-tool-choice --tool-call-parser kimi_k3 --reasoning-parser kimi_k3
+#
+# For a preset item the useful experiment is to SKIP it or use a DIFFERENT VALUE,
+# never to re-enable it. Two deliberate deviations from the preset:
+#   * --enable-prefix-caching  -> we force it OFF (team decision, see below)
+#   * --max-model-len 1048576  -> we cap at 16384 so KV capacity is not the
+#     variable under test; the recipe itself says to adjust it per benchmark
 # ---------------------------------------------------------------------------
 set -uo pipefail
 
@@ -196,6 +213,11 @@ k3_env_defaults() {
     export VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION="${VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION:-1}"
     export VLLM_ALLREDUCE_USE_FLASHINFER="${VLLM_ALLREDUCE_USE_FLASHINFER:-1}"
     export VLLM_ENGINE_READY_TIMEOUT_S="${VLLM_ENGINE_READY_TIMEOUT_S:-3600}"
+    # Model Runner v2 + Rust frontend are part of the BASE PRESET (they are in the
+    # team's docker launch command), not optimizations to be switched on. The
+    # informative experiment is therefore turning them OFF — see opt17.
+    export VLLM_USE_V2_MODEL_RUNNER="${VLLM_USE_V2_MODEL_RUNNER:-1}"
+    export VLLM_USE_RUST_FRONTEND="${VLLM_USE_RUST_FRONTEND:-1}"
     export NCCL_DMABUF_ENABLE="${NCCL_DMABUF_ENABLE:-0}"
     export PYTHONNOUSERSITE="${PYTHONNOUSERSITE:-1}"
     export VLLM_HTTP_TIMEOUT_KEEP_ALIVE="${VLLM_HTTP_TIMEOUT_KEEP_ALIVE:-900}"
@@ -237,6 +259,23 @@ dspark_config() {
         "${DRAFT_SAMPLE_METHOD:-probabilistic}" \
         "${REJECTION_SAMPLE_METHOD:-block}" \
         "${extra:+,$extra}"
+}
+
+# spec_config — dispatcher used by servers/spec.sh so a single script covers the
+# whole speculative-decoding sweep.
+#
+#   SPEC_METHOD=dspark|kimi_k3_mtp|none   SPEC_TOKENS=<n>
+#
+# Prints nothing for "none" (the caller then omits --speculative-config entirely).
+spec_config() {
+    local method="${1:-${SPEC_METHOD:-dspark}}" n="${2:-${SPEC_TOKENS:-3}}"
+    case "$method" in
+        dspark)      dspark_config "$n" ;;
+        kimi_k3_mtp) kimi_k3_mtp_config "$n" ;;
+        none)        : ;;
+        *) echo "ERROR: unknown SPEC_METHOD '$method' (want dspark|kimi_k3_mtp|none)" >&2
+           return 1 ;;
+    esac
 }
 
 # In-model MTP head. No draft model to download, no draft_sample_method — the

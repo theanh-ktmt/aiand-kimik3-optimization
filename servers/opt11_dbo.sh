@@ -8,7 +8,7 @@
 # split is worth its overhead; the defaults here are a starting point.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="opt11_dbo"
+CONFIG="${CONFIG:-opt11_dbo}"
 BENCH_MODE="mtp"
 k3_base_args
 SERVE_ARGS=(

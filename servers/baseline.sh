@@ -8,11 +8,17 @@
 # deviations, both applied uniformly to every config in the repo:
 #   1. --no-enable-prefix-caching (from common.sh) — the recipe enables prefix
 #      caching, but the harness must measure real prefill.
-#   2. --load-format is `auto`, not the recipe `fastsafetensors`, which does not
-#      exist in this image. See the note in common.sh.
+#   2. --max-model-len is 16384, not the preset's 1048576, so KV capacity is not
+#      the variable under test.
+#
+# Everything in the BASE PRESET (Model Runner v2, Rust frontend, tail fusion,
+# FlashInfer allreduce, fastsafetensors, moe-backend auto, gpu-mem 0.95,
+# kv-cache fp8, TRTLLM_RAGGED prefill) is inherited from common.sh, so it is NOT
+# repeated here. What baseline ADDS on top of the preset is the recipe's opt-in
+# spec_decoding feature: DSpark(7) plus the --max-num-seqs 32 cap it requires.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="baseline"
+CONFIG="${CONFIG:-baseline}"
 BENCH_MODE="mtp"   # DSpark is on -> client wraps prompts in the chat template,
                    # and the ShareGPT lane runs in addition to random.
 k3_base_args

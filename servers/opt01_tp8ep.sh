@@ -12,7 +12,7 @@
 # between a tolerable and an intolerable campaign wall-clock.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="opt01_tp8ep"
+CONFIG="${CONFIG:-opt01_tp8ep}"
 BENCH_MODE="mtp"
 k3_base_args
 SERVE_ARGS=(

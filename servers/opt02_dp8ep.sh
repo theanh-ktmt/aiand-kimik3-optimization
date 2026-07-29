@@ -8,7 +8,7 @@
 # EXPLORATORY — validate on a subset sweep before trusting the numbers.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="opt02_dp8ep"
+CONFIG="${CONFIG:-opt02_dp8ep}"
 BENCH_MODE="mtp"
 k3_base_args
 SERVE_ARGS=(

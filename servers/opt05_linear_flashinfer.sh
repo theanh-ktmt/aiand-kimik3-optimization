@@ -18,7 +18,7 @@
 #       before using it)
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="opt05_linear_flashinfer"
+CONFIG="${CONFIG:-opt05_linear_flashinfer}"
 BENCH_MODE="mtp"
 k3_base_args
 SERVE_ARGS=(
