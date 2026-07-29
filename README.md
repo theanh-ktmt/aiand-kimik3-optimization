@@ -69,14 +69,15 @@ Jinja vs K3's XTML chat rendering.
 
 ### Invariants
 
-- **Prefix caching is off by default** (`--no-enable-prefix-caching`) — otherwise
+- **Prefix caching is ALWAYS off** (`--no-enable-prefix-caching`) — otherwise
   repeated warmup / multi-turn prefixes are served from cache, prefill is skipped,
-  and throughput is inflated. Both the recipe's Blackwell block **and** InferenceX's
-  own K3 scripts enable it, so our absolute numbers are a **floor** versus theirs;
-  say so whenever the two are shown together. The deviation is applied uniformly to
-  every config, so config-to-config comparisons are unaffected. Set
-  `PREFIX_CACHING=1` (for every config in the comparison) to reproduce their
-  setting instead.
+  and throughput is inflated. This is a hard invariant with no override: setting
+  `PREFIX_CACHING` to anything non-zero makes the launch fail rather than silently
+  produce non-comparable numbers.
+  Both the recipe's Blackwell block **and** InferenceX's own K3 scripts enable it,
+  so our absolute numbers are a **floor** versus theirs — say so whenever the two
+  are shown together. Config-to-config comparisons inside this repo are unaffected,
+  because the setting is identical everywhere.
 - `--request-rate inf`, `--ignore-eos`, warmup = 2× concurrency,
   `--num-prompts` = 10× concurrency, `--random-range-ratio 0.8` (applied to
   ShareGPT output lengths too, so decode length varies the same way).
@@ -260,8 +261,9 @@ Each config writes everything to `results/<config>/`:
    acceptance for `thinking=on` only. This harness forces thinking **off** for
    MMLU-Pro (inherited from the GLM campaign). That may understate K3. Decide before
    quoting accuracy; override with `K3_CHAT_TEMPLATE_KWARGS` / `EVAL_GEN_KWARGS`.
-3. **Prefix caching on or off?** See the note in the method section. Ours is off,
-   both reference sources are on.
+~~3. Prefix caching on or off?~~ **Settled 2026-07-29: OFF, no override.** Both
+   reference sources enable it, so every absolute number here is a floor versus
+   theirs; that must be stated whenever the numbers are shown side by side.
 
 ## Known caveats
 

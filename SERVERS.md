@@ -183,6 +183,6 @@ environment. Three of their choices are deliberately NOT adopted:
 
 | Their choice | Ours | Why |
 |---|---|---|
-| `--enable-prefix-caching` | off by default | cache hits mask prefill cost, which defeats a configuration comparison. `PREFIX_CACHING=1` reproduces theirs. |
+| `--enable-prefix-caching` | **always off, no override** | cache hits mask prefill cost, which defeats a configuration comparison. Settled 2026-07-29; a non-zero `PREFIX_CACHING` now fails the launch. |
 | `--gpu-memory-utilization 0.90` | 0.95 (recipe) | 0.95 is the recipe base_args value; drop to 0.90 if a big `--max-num-seqs` OOMs. |
 | `VLLM_USE_RUST_FRONTEND=1` always on | only in `opt17` | we want to measure what it is worth before adopting it. |

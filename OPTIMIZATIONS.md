@@ -177,7 +177,7 @@ ways that changed this repo:
 | `--max-cudagraph-capture-size` | — | pinned to `--max-num-seqs` | same, in `opt03` / `opt16` |
 | `--gpu-memory-utilization` | 0.95 | 0.90 | 0.95, with 0.90 as the OOM fallback |
 | `--disable-uvicorn-access-log` | — | yes | yes (in `common.sh`) |
-| prefix caching | enabled | enabled | **off** by default; `PREFIX_CACHING=1` reproduces theirs |
+| prefix caching | enabled | enabled | **always off**, no override (settled 2026-07-29) |
 | `VLLM_USE_RUST_FRONTEND` | "can be enabled" | always 1 | only in `opt17`, so we can price it |
 | extra env | — | `NCCL_DMABUF_ENABLE=0`, `PYTHONNOUSERSITE=1`, `VLLM_HTTP_TIMEOUT_KEEP_ALIVE=900` | adopted in `k3_env_defaults` |
 | DSpark JSON | + `draft_sample_method` / `rejection_sample_method` | omits both (separate variant script has them) | we send the recipe form |
@@ -214,9 +214,11 @@ is lost — only the cost of a separate 1.4 TB server load.
 
 ## Out of scope
 
-- **Prefix caching.** The recipe's Blackwell block sets `--enable-prefix-caching`;
-  the harness forces it **off** so prefill is really measured. Absolute numbers here
-  are a **floor** versus production. Applied uniformly, so comparisons hold.
+- **Prefix caching.** The recipe's Blackwell block and both InferenceX K3 scripts
+  set `--enable-prefix-caching`; the harness forces it **off** so prefill is really
+  measured. Settled as a hard invariant on 2026-07-29 — there is no switch, and a
+  non-zero `PREFIX_CACHING` fails the launch. Absolute numbers here are therefore a
+  **floor** versus both reference sources. Applied uniformly, so comparisons hold.
 - **`--load-format instanttensor` / `--safetensors-load-strategy`** — affect
   weight-load time, not steady-state throughput. Campaign-level settings
   (`LOAD_FORMAT=`, `SAFETENSORS_LOAD_STRATEGY=`), not swept variables.

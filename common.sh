@@ -95,11 +95,15 @@ mkdir -p "$SAVE_DIR"
 #
 # IMPORTANT DIVERGENCE TO BE AWARE OF: the published Kimi-K3 Blackwell recipe sets
 # --enable-prefix-caching, and so do BOTH of InferenceX's own Kimi-K3 B300 scripts
-# ("prefix caching ENABLED (production recipe) — was disabled"). We still default
-# it OFF, because this harness's job is to compare configurations and cache hits
-# would mask prefill cost. The consequence is real and must be stated whenever
-# these numbers are shown next to an InferenceX K3 result: ours are a FLOOR.
-# Set PREFIX_CACHING=1 to reproduce their setting instead.
+# ("prefix caching ENABLED (production recipe) — was disabled"). We deliberately do
+# NOT follow them: this harness's job is to compare configurations, and cache hits
+# would mask prefill cost.
+#
+# This was decided explicitly (2026-07-29) after the divergence was raised — it is
+# a settled choice, not an untuned default, so there is no switch to flip. The
+# consequence must be stated whenever these numbers appear next to a recipe or
+# InferenceX K3 result: OURS ARE A FLOOR. Config-to-config comparisons within this
+# repo are unaffected, because the setting is identical everywhere.
 #
 # Populates the global array COMMON_SERVE_ARGS. An array (rather than echoing a
 # string and re-splitting with `read -a`) is REQUIRED so that flag *values*
@@ -124,20 +128,26 @@ common_serve_args() {
         --enable-auto-tool-choice
         --reasoning-parser kimi_k3
     )
-    # Prefix caching: OFF by default (see the block comment above). PREFIX_CACHING=1
-    # switches to the production/InferenceX setting so you can reproduce their
-    # numbers — it must then be set for EVERY config in the comparison.
-    if [[ "${PREFIX_CACHING:-0}" == "1" ]]; then
-        COMMON_SERVE_ARGS+=(--enable-prefix-caching)
-        echo "NOTE: PREFIX_CACHING=1 — prefix caching is ON. Throughput will be" >&2
-        echo "      inflated relative to the default runs; only compare against" >&2
-        echo "      other PREFIX_CACHING=1 results." >&2
-    else
-        COMMON_SERVE_ARGS+=(--no-enable-prefix-caching)
+    # Prefix caching is OFF, always, with no override. See the block comment above:
+    # this is a team decision, not a default waiting to be tuned.
+    COMMON_SERVE_ARGS+=(--no-enable-prefix-caching)
+    # Guard against a stray env var creating silently non-comparable results.
+    if [[ -n "${PREFIX_CACHING:-}" && "${PREFIX_CACHING}" != "0" ]]; then
+        echo "ERROR: PREFIX_CACHING is set to '${PREFIX_CACHING}', but prefix caching" >&2
+        echo "       is a hard invariant of this harness and cannot be enabled." >&2
+        echo "       Unset it and re-run." >&2
+        return 1
     fi
-    [[ -n "$SAFETENSORS_LOAD_STRATEGY" ]] && \
+    if [[ -n "$SAFETENSORS_LOAD_STRATEGY" ]]; then
         COMMON_SERVE_ARGS+=(--safetensors-load-strategy "$SAFETENSORS_LOAD_STRATEGY")
-    [[ -n "$TOKENIZER_MODE" ]] && COMMON_SERVE_ARGS+=(--tokenizer-mode "$TOKENIZER_MODE")
+    fi
+    if [[ -n "$TOKENIZER_MODE" ]]; then
+        COMMON_SERVE_ARGS+=(--tokenizer-mode "$TOKENIZER_MODE")
+    fi
+    # Explicit success. Without this the function's exit status is that of the
+    # last conditional, so an unset TOKENIZER_MODE would make it "fail" — and
+    # launch_vllm now checks the return value.
+    return 0
 }
 
 # --- Recipe-mandated Kimi-K3 base block ------------------------------------
@@ -332,7 +342,7 @@ launch_vllm() {
     nvidia-smi || true
 
     local -a args
-    common_serve_args
+    common_serve_args || return 1
     args=("${COMMON_SERVE_ARGS[@]}" "$@")
 
     # Build a copy-pasteable, safely-quoted command string.
