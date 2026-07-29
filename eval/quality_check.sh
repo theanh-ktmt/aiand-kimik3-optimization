@@ -23,7 +23,7 @@
 #
 # The FIRST config is the baseline reference for the delta/Pass? verdict.
 #
-# WARNING: do not include opt12_language_model_only when RUN_MMMU=1 — that config
+# WARNING: do not include opt18_language_model_only when RUN_MMMU=1 — that config
 # drops the vision encoder, so every image request fails by construction.
 # ---------------------------------------------------------------------------
 set -uo pipefail
@@ -34,6 +34,19 @@ if [[ $# -gt 0 ]]; then CONFIGS=("$@"); else CONFIGS=(baseline final1 final2); f
 
 PY="$(command -v python3 || command -v python)"
 RUN_MMMU="${RUN_MMMU:-0}"
+
+# Validate EVERY config name up front. Each eval run cold-loads ~1.4 TB of
+# weights, so a typo in the last name must not be discovered after the first one
+# has already run for an hour.
+missing=()
+for cfg in "${CONFIGS[@]}"; do
+    [[ -f "$REPO_ROOT/servers/$cfg.sh" ]] || missing+=("$cfg")
+done
+if [[ ${#missing[@]} -gt 0 ]]; then
+    echo "ERROR: no such config(s): ${missing[*]}" >&2
+    echo "       available: $(cd "$REPO_ROOT/servers" && ls -1 *.sh | sed -e 's/[.]sh$//' | paste -sd' ' -)" >&2
+    exit 1
+fi
 
 if [[ "$RUN_MMMU" == "1" ]]; then
     for cfg in "${CONFIGS[@]}"; do
@@ -47,7 +60,6 @@ fi
 
 for cfg in "${CONFIGS[@]}"; do
     script="$REPO_ROOT/servers/$cfg.sh"
-    [[ -f "$script" ]] || { echo "ERROR: no such config: $script"; exit 1; }
     if [[ "${SKIP_RUN:-0}" == "1" && -d "$REPO_ROOT/results/$cfg/mmlu_pro" ]]; then
         echo "### SKIP eval (existing results): $cfg ###"
         continue

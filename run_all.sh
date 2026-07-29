@@ -114,6 +114,18 @@ if [[ "${1:-}" == "--only" ]]; then
     shift; CONFIGS=("$@")
 fi
 
+# Validate EVERY name before launching anything. A config cold-loads ~1.4 TB, so
+# a typo at the end of --only must not surface hours into the campaign.
+missing=()
+for cfg in "${CONFIGS[@]}"; do
+    [[ -f "$REPO_ROOT/servers/$cfg.sh" ]] || missing+=("$cfg")
+done
+if [[ ${#missing[@]} -gt 0 ]]; then
+    echo "ERROR: no such config(s): ${missing[*]}" >&2
+    echo "       available: $(cd "$REPO_ROOT/servers" && ls -1 *.sh | sed -e 's/[.]sh$//' | paste -sd' ' -)" >&2
+    exit 1
+fi
+
 for cfg in "${CONFIGS[@]}"; do
     sweep="$OPT_SWEEP"
     [[ "$cfg" == "baseline" ]] && sweep="$BASELINE_SWEEP"
