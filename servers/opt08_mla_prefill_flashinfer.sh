@@ -17,7 +17,7 @@
 # is FP8, in both sources.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="${CONFIG:-opt19_mla_prefill_flashinfer}"
+CONFIG="${CONFIG:-opt08_mla_prefill_flashinfer}"
 BENCH_MODE="mtp"
 ATTENTION_CONFIG='{"mla_prefill_backend":"FLASHINFER","use_prefill_query_quantization":true}'
 k3_base_args

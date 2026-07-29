@@ -12,7 +12,7 @@
 # is well-trodden for this architecture.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="${CONFIG:-opt08_hybrid_kv}"
+CONFIG="${CONFIG:-opt10_hybrid_kv}"
 BENCH_MODE="mtp"
 k3_base_args
 SERVE_ARGS=(

@@ -56,18 +56,22 @@ to **skip it** or use a **different value**, never to switch it on:
 --enable-auto-tool-choice --tool-call-parser kimi_k3 --reasoning-parser kimi_k3
 ```
 
-Which configs test which preset item, and in which direction:
+**A preset item is not a screening candidate.** There is no config that turns one
+of these on, and none that turns one off either — flipping a setting the team has
+already committed to would burn a ~1.4 TB server launch to measure something they
+are not going to change. The only preset items that appear in the sweep are the
+ones tested at a **different value**:
 
-| Preset item | Config | Direction |
+| Preset item | Config | What changes |
 |---|---|---|
-| `VLLM_USE_V2_MODEL_RUNNER` + `VLLM_USE_RUST_FRONTEND` | `opt17_no_v2_runner_rust` | **off** |
-| `VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION` | `opt20_no_tail_fusion` | **off** |
-| `VLLM_ALLREDUCE_USE_FLASHINFER` | `opt21_no_flashinfer_allreduce` | **off** |
-| `--gpu-memory-utilization 0.95` | `opt22_gpumem090` | different value (InferenceX uses 0.90) |
-| `--moe-backend auto` | `opt07_moe_deepgemm_mega` | different value |
-| `--attention-config mla_prefill_backend` | `opt19_mla_prefill_flashinfer` | different value |
-| `--tensor-parallel-size 8` | `opt01`, `opt02` | different parallelism |
-| the whole preset with no drafting | `ref_nonmtp` | the preset itself, verbatim |
+| `--gpu-memory-utilization 0.95` | `opt04_gpumem090` | 0.90 (what InferenceX runs); also the fallback if `opt03` OOMs |
+| `--moe-backend auto` | `opt09_moe_deepgemm_mega` | `deep_gemm_mega_moe` |
+| `--attention-config mla_prefill_backend` | `opt08_mla_prefill_flashinfer` | `FLASHINFER` instead of `TRTLLM_RAGGED` |
+| `--tensor-parallel-size 8` | `opt01`, `opt02` | + expert parallel / DP8 |
+
+Everything else in the sweep is something **the preset does not have at all** —
+including `--speculative-config`, which is why the MTP sweep below is the largest
+single opportunity here.
 
 Two deliberate deviations from the preset, applied uniformly:
 `--enable-prefix-caching` is forced **off** (team decision — cache hits would mask
@@ -132,7 +136,18 @@ bash run_spec_sweep.sh                              # dspark 1..8 + kimi_k3_mtp 
 SPEC_TOKENS_LIST="1 3 5 7" bash run_spec_sweep.sh    # find the shape first (cheaper)
 SPEC_METHODS=dspark bash run_spec_sweep.sh           # one mechanism only
 INCLUDE_NONE=1 bash run_spec_sweep.sh                # add the no-drafting floor
+
+# once the token count is settled, A/B the draft sampler at that point:
+SPEC_METHODS=dspark SPEC_TOKENS_LIST=3   SPEC_DRAFT_METHODS="probabilistic greedy" bash run_spec_sweep.sh
 ```
+
+Three axes, all of them "things the preset does not have":
+
+| Axis | Values | Env |
+|---|---|---|
+| mechanism | `dspark` (external draft model) / `kimi_k3_mtp` (in-model head) / `none` | `SPEC_METHODS`, `INCLUDE_NONE` |
+| **token count** | 1..8 | `SPEC_TOKENS_LIST` |
+| draft sampler | `probabilistic` (recipe) / `greedy` | `SPEC_DRAFT_METHODS` (off by default, adds no launches) |
 
 Each point is its own server launch (the token count is a serve flag), its own
 `results/spec_<method>_<n>/` directory and its own W&B run, via `CONFIG_LABEL`.
@@ -180,8 +195,8 @@ Tracked metrics: **Output throughput**, **TTFT** (mean/median/P90), **TPOT**
 ```
 common.sh            shared config + mandatory flags + K3 recipe base block +
                      dspark_config() / kimi_k3_mtp_config() + server lifecycle
-servers/*.sh         one launch script per configuration (baseline + 20 opts +
-                     spec.sh + ref_nonmtp + 2 final placeholders = 25)
+servers/*.sh         one launch script per configuration (baseline + 17 opts +
+                     spec.sh + ref_nonmtp + 2 final placeholders = 22)
 run_spec_sweep.sh    sweep the speculative-decoding token count + AL curve
 bench/bench.sh       the sweep: random lane (+ ShareGPT lane for mtp configs)
 bench/sharegpt_client.py  InferenceX client with a ShareGPT prompt source
@@ -233,8 +248,8 @@ answer, not a substring grep), the exact enum values passed, the
 
 ```bash
 bash run.sh baseline full                # full sweep, both lanes
-bash run.sh opt05_linear_flashinfer      # subset sweep (default) for screening
-DATASETS=sharegpt bash run.sh opt05_linear_flashinfer full   # one lane only
+bash run.sh opt06_linear_flashinfer      # subset sweep (default) for screening
+DATASETS=sharegpt bash run.sh opt06_linear_flashinfer full   # one lane only
 ```
 
 ### Manual (launch + benchmark in separate shells)
@@ -244,11 +259,11 @@ Preferred when screening several variants of one server config, because a cold
 
 ```bash
 # shell A - launch and keep the server up (command is echoed + logged)
-bash servers/opt05_linear_flashinfer.sh
+bash servers/opt06_linear_flashinfer.sh
 
 # shell B - benchmark the running server
-CONFIG=opt05_linear_flashinfer bash bench/bench.sh \
-    --config opt05_linear_flashinfer --mode mtp --sweep subset
+CONFIG=opt06_linear_flashinfer bash bench/bench.sh \
+    --config opt06_linear_flashinfer --mode mtp --sweep subset
 ```
 
 ### Whole campaign
@@ -276,7 +291,7 @@ RUN_MMMU=1 bash eval/quality_check.sh baseline final1   # + vision (MMMU-Pro)
 Before each sweep a **smoke test** sends a few chat requests and prints
 prompt + response, so you can confirm the server answers sensibly first.
 `SMOKE_TEST=0` disables it; `SMOKE_TEST_STRICT=1` aborts on total failure;
-`SMOKE_TEST_MM=1` adds an image request (not for `opt18_language_model_only`).
+`SMOKE_TEST_MM=1` adds an image request (not for `opt17_language_model_only`).
 
 **If the smoke test shows malformed chat output**, set `TOKENIZER_MODE=kimi_k3`
 (forwarded to both server and client) — that mode renders prompts with K3's Python

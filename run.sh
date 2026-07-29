@@ -11,7 +11,7 @@
 #
 # Usage:
 #   bash run.sh baseline full               # full sweep (conc 1..128)
-#   bash run.sh opt05_linear_flashinfer     # subset sweep (conc 1,16,128) for trials
+#   bash run.sh opt06_linear_flashinfer     # subset sweep (conc 1,16,128) for trials
 #   CONFIG_LABEL=spec_dspark_5 SPEC_METHOD=dspark SPEC_TOKENS=5 bash run.sh spec
 #
 # Positional args:

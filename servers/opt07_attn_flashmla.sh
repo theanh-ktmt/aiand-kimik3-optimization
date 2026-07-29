@@ -13,7 +13,7 @@
 # K3 gated MLA — do not use them here.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="${CONFIG:-opt06_attn_flashmla}"
+CONFIG="${CONFIG:-opt07_attn_flashmla}"
 BENCH_MODE="mtp"
 k3_base_args
 SERVE_ARGS=(

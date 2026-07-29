@@ -11,7 +11,7 @@
 # build and can be tried by editing the value here if this underperforms.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="${CONFIG:-opt09_a2a_nvlink_one_sided}"
+CONFIG="${CONFIG:-opt11_a2a_nvlink_one_sided}"
 BENCH_MODE="mtp"
 k3_base_args
 SERVE_ARGS=(

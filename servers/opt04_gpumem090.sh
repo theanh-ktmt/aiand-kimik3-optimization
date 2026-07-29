@@ -12,7 +12,7 @@
 # at 0.95, this is the value to pair it with rather than abandoning the cap.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="${CONFIG:-opt22_gpumem090}"
+CONFIG="${CONFIG:-opt04_gpumem090}"
 BENCH_MODE="mtp"
 GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.90}"
 k3_base_args

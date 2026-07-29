@@ -16,7 +16,7 @@
 # then EPLB_REDUNDANT=0 with round_robin alone to see which mechanism carries it.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="${CONFIG:-opt10_eplb}"
+CONFIG="${CONFIG:-opt12_eplb}"
 BENCH_MODE="mtp"
 k3_base_args
 SERVE_ARGS=(

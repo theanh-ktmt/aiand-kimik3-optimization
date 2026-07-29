@@ -51,7 +51,7 @@ Five consequences drive the sweep:
 | "`--language-model-only` drops MoonViT-V2 and frees VRAM" | The help says only: "disables all multimodal inputs by setting all modality limits to 0. Equivalent to `--limit-mm-per-prompt` 0 for every modality." It removes multimodal profiling and scheduler branches; it does **not** promise the encoder weights are skipped. Any VRAM saving must be measured. |
 | "add `compile_mm_encoder: false`" | Already `False` by default — the proposal was a no-op. Dropped. |
 
-## The screening list (20 configs + the spec sweep)
+## The screening list (17 configs + the spec sweep)
 
 Ordered as `run_all.sh` runs them.
 
@@ -68,7 +68,7 @@ Caveat: the recipe lists `multi_node_dep` with `strategy_min_gpus: 16`, so DP+EP
 one node is **exploratory**. `opt09`/`opt10`/`opt11` build on it and are only worth
 running if `opt02` beat `opt01`.
 
-### 3–4. Batching  (`opt03_hyperparams`, `opt04_perf_mode_throughput`)
+### 3–4. Batching  (`opt03_hyperparams`, `opt05_perf_mode_throughput`)
 
 `opt03` = `--max-num-seqs 512` + `--max-num-batched-tokens 16384` +
 `--max-cudagraph-capture-size 512`. The 32-sequence cap is the
@@ -83,7 +83,7 @@ exposes: "larger CUDA graphs, more aggressive batching, throughput-oriented
 kernels". It deliberately overlaps `opt03` and `opt16` — if one switch matches the
 hand-tuned configs, the hand-tuning is not worth maintaining.
 
-### 5. KDA / linear-attention kernel  (`opt05_linear_flashinfer`)  ← **likely the biggest win**
+### 5. KDA / linear-attention kernel  (`opt06_linear_flashinfer`)  ← **likely the biggest win**
 
 `--mamba-backend TRITON → FLASHINFER`. `MambaBackendEnum = TRITON (default),
 FLASHINFER, CPU`. This is the kernel for the 69 KDA layers, i.e. **74% of the
@@ -95,7 +95,7 @@ Adjacent knobs, left out to keep this a single-variable test:
 `--kernel-config '{"linear_backend": …}'` (defaults to `'auto'`; the valid values
 are not listed in `--help`, so probe before use).
 
-### 6 + 19. MLA kernels  (`opt06_attn_flashmla`, `opt19_mla_prefill_flashinfer`)
+### 6 + 19. MLA kernels  (`opt07_attn_flashmla`, `opt08_mla_prefill_flashinfer`)
 
 `opt06` = `--attention-backend FLASHMLA`, the **decode** kernel for the 24 Gated MLA
 layers. Alternatives in this build: `FLASHINFER_MLA` (what the recipe pins for the
@@ -108,12 +108,12 @@ InferenceX Kimi-K3 B300 scripts say `FLASHINFER` ("MLA prefill runs on FlashInfe
 per the production recipe"). One of them is stale; a subset sweep settles it. Watch
 TTFT, not output throughput.
 
-### 7. MoE backend  (`opt07_moe_deepgemm_mega`)
+### 7. MoE backend  (`opt09_moe_deepgemm_mega`)
 
 `auto → deep_gemm_mega_moe`. The recipe recommends it explicitly for any
 expert-parallel deployment and hardcodes it in its own decode profile.
 
-### 8. Hybrid KV cache manager  (`opt08_hybrid_kv`)
+### 8. Hybrid KV cache manager  (`opt10_hybrid_kv`)
 
 `--no-disable-hybrid-kv-cache-manager`. More KV capacity → bigger batch →
 throughput, and the recipe enables it on both prefill and decode workers in its P/D
@@ -121,13 +121,13 @@ profile.
 
 ### 9–11. Expert-parallel communication and balancing (DP8EP only)
 
-* `opt09_a2a_nvlink_one_sided` — `flashinfer_nvlink_one_sided`, the recipe's
+* `opt11_a2a_nvlink_one_sided` — `flashinfer_nvlink_one_sided`, the recipe's
   explicit NVLink recommendation and what its decode profile hardcodes.
-* `opt10_eplb` — `--enable-eplb` (32 redundant experts) plus
+* `opt12_eplb` — `--enable-eplb` (32 redundant experts) plus
   `--expert-placement-strategy`. 112 experts/GPU at EP8 is ~7× a GLM-class model,
   so routing skew has much more room to create a straggler rank, and one straggler
   stalls the whole all2all.
-* `opt11_dbo` — dual-batch overlap: hide the all2all behind the other
+* `opt13_dbo` — dual-batch overlap: hide the all2all behind the other
   micro-batch's GEMMs. With 896 experts there is a lot to hide.
 
 ### Speculative decoding — a full sweep, not a config  ← the campaign's real question
@@ -141,7 +141,7 @@ hand-picked point:
 | `ref_nonmtp` / `spec_none` | none | — |
 | `spec_kimi_k3_mtp_<1..8>` | **in-model MTP head** — no draft weights, no extra VRAM | none |
 | `spec_dspark_<1..8>` / `baseline` (7) | external DSpark draft model | `Inferact/Kimi-K3-DSpark` |
-| `opt14_spec_disable_bs64` | DSpark(7) for batch 1–64, **off** above 64 | as above |
+| `opt16_spec_disable_bs64` | DSpark(7) for batch 1–64, **off** above 64 | as above |
 
 `opt14` encodes the core trade-off discretely: spec decoding is a latency win at
 small batch and a throughput **tax** once the GPU is saturated, because every
@@ -156,20 +156,13 @@ per-concurrency throughput and with the second mechanism.
 
 ### 15–18. Runtime
 
-* `opt15_async_scheduling` — "avoids gaps in GPU utilization"; default is
+* `opt14_async_scheduling` — "avoids gaps in GPU utilization"; default is
   engine-decides, so pinning it on is free to try. Matters most here because 93
   layers + spec decoding makes each engine step short.
-* `opt16_cudagraph_decode_only` — `FULL_DECODE_ONLY`, what the recipe's own decode
+* `opt15_cudagraph_decode_only` — `FULL_DECODE_ONLY`, what the recipe's own decode
   workers use. Valid modes: `NONE, PIECEWISE, FULL, FULL_DECODE_ONLY,
   FULL_AND_PIECEWISE`.
-* `opt17_no_v2_runner_rust` — Model Runner v2 + Rust frontend **OFF**. Both are in
-  the base preset, so switching them on would be a no-op; the informative direction
-  is off, which prices what the preset is buying. Split into two runs if the bundle
-  regresses.
-* `opt20_no_tail_fusion`, `opt21_no_flashinfer_allreduce`, `opt22_gpumem090` — the
-  remaining base-preset items, each tested by skipping it or using a different value.
-  See the preset table in README.
-* `opt18_language_model_only` — text-only serving. See the correction above for
+* `opt17_language_model_only` — text-only serving. See the correction above for
   what it actually does.
 
 ## Third source: InferenceX already ships Kimi-K3 B300 scripts

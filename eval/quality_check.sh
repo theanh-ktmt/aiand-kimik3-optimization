@@ -23,7 +23,7 @@
 #
 # The FIRST config is the baseline reference for the delta/Pass? verdict.
 #
-# WARNING: do not include opt18_language_model_only when RUN_MMMU=1 — that config
+# WARNING: do not include opt17_language_model_only when RUN_MMMU=1 — that config
 # drops the vision encoder, so every image request fails by construction.
 # ---------------------------------------------------------------------------
 set -uo pipefail

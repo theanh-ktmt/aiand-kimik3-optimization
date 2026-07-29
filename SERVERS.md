@@ -1,8 +1,11 @@
 # Server scripts
 
-25 scripts: baseline + 20 optimizations + `spec.sh` (the parameterized
-speculative-decoding sweep) + a non-MTP reference + 2 final placeholders. Trimmed
-to the knobs with real expected value — see
+22 scripts: baseline + 17 optimizations + `spec.sh` (the parameterized
+speculative-decoding sweep) + a non-MTP reference + 2 final placeholders.
+
+Every optimization is either something the **base preset does not have**, or a
+**different value** for something it does. Nothing re-tests a preset item in the
+direction it is already set — see
 [`OPTIMIZATIONS.md`](OPTIMIZATIONS.md) for what was cut and why.
 
 Every script carries:
@@ -54,24 +57,21 @@ speculative decoding. The two `mtp` lanes are separate rows in the CSV
 | 1 | `opt01_tp8ep.sh` | Parallelism: TP8 + EP | `--enable-expert-parallel --enable-ep-weight-filter` | mtp |
 | 2 | `opt02_dp8ep.sh` | Parallelism: DP8 + EP | `--data-parallel-size 8 --enable-expert-parallel --enable-ep-weight-filter` (base for 9/10/11) | mtp |
 | 3 | `opt03_hyperparams.sh` | Batching | `--max-num-batched-tokens 16384 --max-num-seqs 512 --max-cudagraph-capture-size 512` | mtp |
-| 4 | `opt04_perf_mode_throughput.sh` | High-level mode | `--performance-mode throughput` | mtp |
-| 5 | `opt05_linear_flashinfer.sh` | **KDA / linear kernel (69 of 93 layers)** | `--mamba-backend FLASHINFER` (default is TRITON) | mtp |
-| 6 | `opt06_attn_flashmla.sh` | MLA kernel (24 layers) | `--attention-backend FLASHMLA` | mtp |
-| 19 | `opt19_mla_prefill_flashinfer.sh` | MLA **prefill** kernel — settles a source conflict | `mla_prefill_backend: FLASHINFER` (recipe says `TRTLLM_RAGGED`, InferenceX uses `FLASHINFER`) | mtp |
-| 7 | `opt07_moe_deepgemm_mega.sh` | MoE backend | `MOE_BACKEND=deep_gemm_mega_moe` + `VLLM_USE_DEEP_GEMM=1` | mtp |
-| 8 | `opt08_hybrid_kv.sh` | **Hybrid KV manager** (KDA + MLA) | `--no-disable-hybrid-kv-cache-manager` | mtp |
-| 9 | `opt09_a2a_nvlink_one_sided.sh` | (DP8EP) All2All | `--all2all-backend flashinfer_nvlink_one_sided` | mtp |
-| 10 | `opt10_eplb.sh` | (DP8EP) Expert load balancing | `--enable-eplb --eplb-config '{…,"num_redundant_experts":${EPLB_REDUNDANT:-32}}' --expert-placement-strategy` | mtp |
-| 11 | `opt11_dbo.sh` | (DP8EP) Dual-batch overlap | `--enable-dbo --dbo-decode-token-threshold … --dbo-prefill-token-threshold …` | mtp |
+| 4 | `opt05_perf_mode_throughput.sh` | High-level mode | `--performance-mode throughput` | mtp |
+| 5 | `opt06_linear_flashinfer.sh` | **KDA / linear kernel (69 of 93 layers)** | `--mamba-backend FLASHINFER` (default is TRITON) | mtp |
+| 6 | `opt07_attn_flashmla.sh` | MLA kernel (24 layers) | `--attention-backend FLASHMLA` | mtp |
+| 19 | `opt08_mla_prefill_flashinfer.sh` | MLA **prefill** kernel — settles a source conflict | `mla_prefill_backend: FLASHINFER` (recipe says `TRTLLM_RAGGED`, InferenceX uses `FLASHINFER`) | mtp |
+| 7 | `opt09_moe_deepgemm_mega.sh` | MoE backend | `MOE_BACKEND=deep_gemm_mega_moe` + `VLLM_USE_DEEP_GEMM=1` | mtp |
+| 8 | `opt10_hybrid_kv.sh` | **Hybrid KV manager** (KDA + MLA) | `--no-disable-hybrid-kv-cache-manager` | mtp |
+| 9 | `opt11_a2a_nvlink_one_sided.sh` | (DP8EP) All2All | `--all2all-backend flashinfer_nvlink_one_sided` | mtp |
+| 10 | `opt12_eplb.sh` | (DP8EP) Expert load balancing | `--enable-eplb --eplb-config '{…,"num_redundant_experts":${EPLB_REDUNDANT:-32}}' --expert-placement-strategy` | mtp |
+| 11 | `opt13_dbo.sh` | (DP8EP) Dual-batch overlap | `--enable-dbo --dbo-decode-token-threshold … --dbo-prefill-token-threshold …` | mtp |
 | — | `spec.sh` | **Speculative-decoding sweep** (parameterized) | `SPEC_METHOD` = dspark / kimi_k3_mtp / none, times `SPEC_TOKENS=n`; driven by `run_spec_sweep.sh`, one label per point | mtp (nonmtp when none) |
-| 14 | `opt14_spec_disable_bs64.sh` | Batch-gated spec decoding | DSpark(7) for batch 1–64, off above 64 | mtp |
-| 15 | `opt15_async_scheduling.sh` | Scheduler | `--async-scheduling` | mtp |
-| 16 | `opt16_cudagraph_decode_only.sh` | CUDA graph | `--compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' --max-num-seqs 128 --max-cudagraph-capture-size 128` | mtp |
-| 17 | `opt17_no_v2_runner_rust.sh` | Engine + frontend **OFF** (both are in the base preset) | `VLLM_USE_V2_MODEL_RUNNER=0` + `VLLM_USE_RUST_FRONTEND=0` | mtp |
-| 20 | `opt20_no_tail_fusion.sh` | LatentMoE tail fusion **OFF** | `VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION=0` | mtp |
-| 21 | `opt21_no_flashinfer_allreduce.sh` | FlashInfer allreduce **OFF** | `VLLM_ALLREDUCE_USE_FLASHINFER=0` | mtp |
-| 22 | `opt22_gpumem090.sh` | GPU memory fraction | `--gpu-memory-utilization 0.90` (preset is 0.95; InferenceX uses 0.90) | mtp |
-| 18 | `opt18_language_model_only.sh` | Skip multimodal path | `--language-model-only` | mtp |
+| 14 | `opt16_spec_disable_bs64.sh` | Batch-gated spec decoding | DSpark(7) for batch 1–64, off above 64 | mtp |
+| 15 | `opt14_async_scheduling.sh` | Scheduler | `--async-scheduling` | mtp |
+| 16 | `opt15_cudagraph_decode_only.sh` | CUDA graph | `--compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' --max-num-seqs 128 --max-cudagraph-capture-size 128` | mtp |
+| 22 | `opt04_gpumem090.sh` | GPU memory fraction | `--gpu-memory-utilization 0.90` (preset is 0.95; InferenceX uses 0.90) | mtp |
+| 18 | `opt17_language_model_only.sh` | Skip multimodal path | `--language-model-only` | mtp |
 | — | `ref_nonmtp.sh` | **The base preset verbatim** — no drafting, no `--max-num-seqs` | (preset only) | **nonmtp** |
 | — | `final1.sh` | **Proposed #1 (TP8)** — placeholder | KDA FLASHINFER + hybrid KV + async sched + batching + DSpark(3) + Model Runner v2 | mtp |
 | — | `final2.sh` | **Proposed #2 (DP8EP)** — placeholder | as final1 but DP8EP + `flashinfer_nvlink_one_sided` + `deep_gemm_mega_moe` | mtp |
@@ -122,7 +122,7 @@ sets eval concurrency; `MMLU_PRO_TASK` / `MMMU_PRO_TASK` / `EVAL_GEN_KWARGS` /
 
 Unlike GLM-5.2 (text-only), **Kimi-K3 is natively multimodal**, so MMMU-Pro
 applies — opt in with `RUN_MMMU=1`. `quality_check.sh` refuses to run it against
-`opt18_language_model_only`, which disables multimodal inputs.
+`opt17_language_model_only`, which disables multimodal inputs.
 
 ## Flag / value notes (all verified against `vllm serve --help=all` on the target image)
 

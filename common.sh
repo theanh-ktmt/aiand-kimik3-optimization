@@ -612,7 +612,7 @@ sys.exit(0 if c else 3)
 }
 
 # serve_main — entrypoint every servers/*.sh calls after defining:
-#     CONFIG       config label (e.g. opt07_moe_deepgemm_mega)
+#     CONFIG       config label (e.g. opt09_moe_deepgemm_mega)
 #     BENCH_MODE   mtp | nonmtp  (InferenceX semantics: mtp adds --use-chat-template
 #                  on the client, and additionally runs the ShareGPT lane)
 #     SERVE_ARGS   bash array of the optimization-specific serve flags

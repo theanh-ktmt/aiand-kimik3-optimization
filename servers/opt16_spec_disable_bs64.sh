@@ -11,7 +11,7 @@
 # (start, end, num_spec) tuples — there is no standalone disable_by_batch_size flag.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="${CONFIG:-opt14_spec_disable_bs64}"
+CONFIG="${CONFIG:-opt16_spec_disable_bs64}"
 BENCH_MODE="mtp"
 SPEC_EXTRA_JSON='"num_speculative_tokens_per_batch_size":[[1,64,7],[65,100000,0]]'
 k3_base_args

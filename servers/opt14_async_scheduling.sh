@@ -9,7 +9,7 @@
 # step short, so scheduler gaps are a larger fraction of the step.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="${CONFIG:-opt15_async_scheduling}"
+CONFIG="${CONFIG:-opt14_async_scheduling}"
 BENCH_MODE="mtp"
 k3_base_args
 SERVE_ARGS=(

@@ -12,7 +12,7 @@
 # priority ever shifts to TTFT/TPOT at low concurrency.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="${CONFIG:-opt04_perf_mode_throughput}"
+CONFIG="${CONFIG:-opt05_perf_mode_throughput}"
 BENCH_MODE="mtp"
 k3_base_args
 SERVE_ARGS=(

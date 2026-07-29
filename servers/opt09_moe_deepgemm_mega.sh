@@ -12,7 +12,7 @@
 # marlin is a Hopper-only override in the recipe — not for B300.
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
-CONFIG="${CONFIG:-opt07_moe_deepgemm_mega}"
+CONFIG="${CONFIG:-opt09_moe_deepgemm_mega}"
 BENCH_MODE="mtp"
 export VLLM_USE_DEEP_GEMM=1
 MOE_BACKEND="${MOE_BACKEND:-deep_gemm_mega_moe}"

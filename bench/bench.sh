@@ -35,7 +35,7 @@
 #
 # Usage:
 #   bash bench/bench.sh --config baseline --mode mtp
-#   SWEEP=subset bash bench/bench.sh --config opt05_linear_flashinfer
+#   SWEEP=subset bash bench/bench.sh --config opt06_linear_flashinfer
 #   DATASETS=sharegpt bash bench/bench.sh --config spec_dspark_5 --mode mtp
 #
 # Env knobs:

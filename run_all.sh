@@ -30,7 +30,7 @@
 #
 # Usage:
 #   bash run_all.sh                 # all configs (baseline + opts) subset
-#   bash run_all.sh --only opt05_linear_flashinfer opt08_hybrid_kv
+#   bash run_all.sh --only opt06_linear_flashinfer opt10_hybrid_kv
 #
 # The speculative-decoding TOKEN COUNT is not in this list — it has its own
 # sweep, because it needs one server launch per value:
@@ -99,17 +99,16 @@ reap_gpu() {
 ALL_CONFIGS=(
     baseline
     opt01_tp8ep opt02_dp8ep
-    opt03_hyperparams opt04_perf_mode_throughput opt22_gpumem090
-    opt05_linear_flashinfer
-    opt06_attn_flashmla opt19_mla_prefill_flashinfer
-    opt07_moe_deepgemm_mega
-    opt08_hybrid_kv
-    opt09_a2a_nvlink_one_sided opt10_eplb opt11_dbo
-    opt14_spec_disable_bs64
-    opt15_async_scheduling
-    opt16_cudagraph_decode_only
-    opt17_no_v2_runner_rust opt20_no_tail_fusion opt21_no_flashinfer_allreduce
-    opt18_language_model_only
+    opt03_hyperparams opt04_gpumem090 opt05_perf_mode_throughput
+    opt06_linear_flashinfer
+    opt07_attn_flashmla opt08_mla_prefill_flashinfer
+    opt09_moe_deepgemm_mega
+    opt10_hybrid_kv
+    opt11_a2a_nvlink_one_sided opt12_eplb opt13_dbo
+    opt14_async_scheduling
+    opt15_cudagraph_decode_only
+    opt16_spec_disable_bs64
+    opt17_language_model_only
     ref_nonmtp
 )
 
