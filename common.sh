@@ -54,16 +54,31 @@ export NUM_GPUS="${NUM_GPUS:-8}"            # used by aggregator for per-GPU tpu
 # scenarios for best performance."
 export MAX_MODEL_LEN="${MAX_MODEL_LEN:-16384}"
 
-# Weight loader. The canonical recipe serve uses fastsafetensors (much faster
-# weight load — matters a lot for a 1.4 TB checkpoint). Startup-only; not a
-# throughput knob. Override with LOAD_FORMAT=auto if fastsafetensors is missing.
+# Weight loader. `fastsafetensors` is what the recipe asks for AND what both of
+# InferenceX's own Kimi-K3 B300 scripts actually run
+# (third_party/InferenceX/benchmarks/single_node/{speedbench,agentic}/kimik3_fp4_b300_vllm.sh),
+# so it is proven on this image — even though it is NOT in the documented
+# --load-format list from `vllm serve --help=all` (auto, pt, safetensors,
+# instanttensor, npcache, dummy, tensorizer, runai_streamer,
+# runai_streamer_sharded, bitsandbytes, sharded_state, mistral, modelexpress).
+# The help ends that list with "Other custom values can be supported via
+# plugins", which is presumably how the kimi-k3 image provides it.
+#
+# If it ever fails to resolve, `instanttensor` is the in-tree equivalent
+# ("distributed loading with pipelined prefetching and fast direct I/O"):
+#     LOAD_FORMAT=instanttensor SAFETENSORS_LOAD_STRATEGY=eager bash run_all.sh
 export LOAD_FORMAT="${LOAD_FORMAT:-fastsafetensors}"
+export SAFETENSORS_LOAD_STRATEGY="${SAFETENSORS_LOAD_STRATEGY:-}"
+
+# Optional tokenizer mode. This image offers `kimi_k3`, which "will always use
+# the hf tokenizer but render chat prompts with Kimi K3's Python XTML encoding
+# instead of a Jinja template". Leave unset (vLLM default `auto`) unless the
+# smoke test shows malformed chat output — then set TOKENIZER_MODE=kimi_k3 for
+# BOTH server and benchmark client (bench.sh forwards it).
+export TOKENIZER_MODE="${TOKENIZER_MODE:-}"
 
 # Where vLLM looks for / caches model weights (cloud container default).
 export DOWNLOAD_DIR="${DOWNLOAD_DIR:-/workspace/models}"
-
-# Dataset for the client sweep: sharegpt (default) | random. See bench/bench.sh.
-export DATASET="${DATASET:-sharegpt}"
 
 # Per-config save directory. serve_main sets SAVE_DIR=results/<CONFIG> and points
 # SERVER_LOG at it; this top-level value is only a fallback for direct callers.
@@ -76,10 +91,15 @@ mkdir -p "$SAVE_DIR"
 # IMPORTANT: --no-enable-prefix-caching is REQUIRED. With prefix caching on,
 # repeated warmup / multi-turn ShareGPT prefixes are served from cache, prefill
 # is skipped, and throughput is inflated. This must never be removed for any
-# config. NOTE: the published Kimi-K3 Blackwell recipe DOES set
-# --enable-prefix-caching; we deliberately deviate so the numbers are
-# apples-to-apples measurements rather than cache hits. Any absolute number here
-# is therefore a floor versus a production deployment with caching on.
+# config.
+#
+# IMPORTANT DIVERGENCE TO BE AWARE OF: the published Kimi-K3 Blackwell recipe sets
+# --enable-prefix-caching, and so do BOTH of InferenceX's own Kimi-K3 B300 scripts
+# ("prefix caching ENABLED (production recipe) — was disabled"). We still default
+# it OFF, because this harness's job is to compare configurations and cache hits
+# would mask prefill cost. The consequence is real and must be stated whenever
+# these numbers are shown next to an InferenceX K3 result: ours are a FLOOR.
+# Set PREFIX_CACHING=1 to reproduce their setting instead.
 #
 # Populates the global array COMMON_SERVE_ARGS. An array (rather than echoing a
 # string and re-splitting with `read -a`) is REQUIRED so that flag *values*
@@ -96,7 +116,7 @@ common_serve_args() {
         --host 0.0.0.0 --port "$PORT"
         --served-model-name "$MODEL"
         --trust-remote-code
-        --no-enable-prefix-caching
+        --disable-uvicorn-access-log
         --download-dir "$DOWNLOAD_DIR"
         --max-model-len "$MAX_MODEL_LEN"
         --load-format "$LOAD_FORMAT"
@@ -104,6 +124,20 @@ common_serve_args() {
         --enable-auto-tool-choice
         --reasoning-parser kimi_k3
     )
+    # Prefix caching: OFF by default (see the block comment above). PREFIX_CACHING=1
+    # switches to the production/InferenceX setting so you can reproduce their
+    # numbers — it must then be set for EVERY config in the comparison.
+    if [[ "${PREFIX_CACHING:-0}" == "1" ]]; then
+        COMMON_SERVE_ARGS+=(--enable-prefix-caching)
+        echo "NOTE: PREFIX_CACHING=1 — prefix caching is ON. Throughput will be" >&2
+        echo "      inflated relative to the default runs; only compare against" >&2
+        echo "      other PREFIX_CACHING=1 results." >&2
+    else
+        COMMON_SERVE_ARGS+=(--no-enable-prefix-caching)
+    fi
+    [[ -n "$SAFETENSORS_LOAD_STRATEGY" ]] && \
+        COMMON_SERVE_ARGS+=(--safetensors-load-strategy "$SAFETENSORS_LOAD_STRATEGY")
+    [[ -n "$TOKENIZER_MODE" ]] && COMMON_SERVE_ARGS+=(--tokenizer-mode "$TOKENIZER_MODE")
 }
 
 # --- Recipe-mandated Kimi-K3 base block ------------------------------------
@@ -142,23 +176,47 @@ k3_base_args() {
 #   VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION  fuses the LatentMoE tail (K3-specific)
 #   VLLM_ALLREDUCE_USE_FLASHINFER          FlashInfer allreduce kernels
 #   VLLM_ENGINE_READY_TIMEOUT_S            3600 — a 1.4 TB load is slow
+#
+# The last four come from InferenceX's own Kimi-K3 B300 scripts rather than the
+# recipe yaml: NCCL_DMABUF_ENABLE=0 and PYTHONNOUSERSITE=1 are part of their
+# "Kimi-K3 production serving environment", and VLLM_HTTP_TIMEOUT_KEEP_ALIVE=900
+# is there because the Rust frontend's 5s default closes pooled keep-alive
+# sockets mid-benchmark (they lost a whole run to that race).
 k3_env_defaults() {
     export VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION="${VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION:-1}"
     export VLLM_ALLREDUCE_USE_FLASHINFER="${VLLM_ALLREDUCE_USE_FLASHINFER:-1}"
     export VLLM_ENGINE_READY_TIMEOUT_S="${VLLM_ENGINE_READY_TIMEOUT_S:-3600}"
+    export NCCL_DMABUF_ENABLE="${NCCL_DMABUF_ENABLE:-0}"
+    export PYTHONNOUSERSITE="${PYTHONNOUSERSITE:-1}"
+    export VLLM_HTTP_TIMEOUT_KEEP_ALIVE="${VLLM_HTTP_TIMEOUT_KEEP_ALIVE:-900}"
 }
 
-# --- DSpark speculative decoding -------------------------------------------
-# Kimi-K3 does NOT use MTP/EAGLE — it ships an Inferact-trained **DSpark** draft
-# model, configured entirely through --speculative-config. The recipe default is
-# 7 speculative tokens with the FlashInfer MLA verify backend, probabilistic
-# draft sampling and block rejection sampling.
+# --- Speculative decoding: TWO methods are available for Kimi-K3 ------------
+# `vllm serve --help=all` shows --spec-method accepting BOTH:
 #
-#   dspark_config [num_speculative_tokens]   # default 7
+#   dspark        the recipe's choice: a separate Inferact-trained draft model
+#                 ($DRAFT_MODEL), with its own verify attention backend,
+#                 draft-sampling and rejection-sampling methods.
+#   kimi_k3_mtp   an in-model MTP head, the same shape of mechanism GLM-5.2 used.
+#                 The recipe never mentions it, but the engine supports it — and
+#                 comparing the two is the whole point of the opt13 config.
+#
+# Builders below; both emit a --speculative-config JSON.
+#
+#   dspark_config       [num_speculative_tokens]   # default 7 (recipe default)
+#   kimi_k3_mtp_config  [num_speculative_tokens]   # default 3
 #
 # Overridable per script via SPEC_ATTN_BACKEND / DRAFT_SAMPLE_METHOD /
 # REJECTION_SAMPLE_METHOD. Extra JSON keys can be appended with SPEC_EXTRA_JSON
 # (e.g. a num_speculative_tokens_per_batch_size schedule).
+#
+# NOTE on draft_sample_method / rejection_sample_method: the recipe yaml sets them
+# (probabilistic / block) and so do we, but InferenceX's baseline K3 script OMITS
+# both and ships them only in a separate
+# `..._probabilistic_sample_method_block_rejection_sample_method.sh` variant. So
+# "recipe default" and "InferenceX default" differ here; set
+# DRAFT_SAMPLE_METHOD= / REJECTION_SAMPLE_METHOD= to empty-string-free values or
+# edit dspark_config if you need the bare form.
 dspark_config() {
     local n="${1:-7}"
     local draft="${DRAFT_MODEL_PATH:-$DRAFT_MODEL}"
@@ -169,6 +227,15 @@ dspark_config() {
         "${DRAFT_SAMPLE_METHOD:-probabilistic}" \
         "${REJECTION_SAMPLE_METHOD:-block}" \
         "${extra:+,$extra}"
+}
+
+# In-model MTP head. No draft model to download, no draft_sample_method — the
+# extra keys DSpark needs do not apply here, so keep the JSON minimal.
+kimi_k3_mtp_config() {
+    local n="${1:-3}"
+    local extra="${SPEC_EXTRA_JSON:-}"
+    printf '{"method":"kimi_k3_mtp","num_speculative_tokens":%s%s}' \
+        "$n" "${extra:+,$extra}"
 }
 
 # --- Server lifecycle -------------------------------------------------------
@@ -287,7 +354,6 @@ launch_vllm() {
         echo "# model  : $SERVE_MODEL"
         echo "# draft  : ${DRAFT_MODEL_PATH:-$DRAFT_MODEL}"
         echo "# env    :" \
-             "VLLM_ATTENTION_BACKEND=${VLLM_ATTENTION_BACKEND:-<unset>}" \
              "VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION=${VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION:-<unset>}" \
              "VLLM_ALLREDUCE_USE_FLASHINFER=${VLLM_ALLREDUCE_USE_FLASHINFER:-<unset>}" \
              "VLLM_USE_V2_MODEL_RUNNER=${VLLM_USE_V2_MODEL_RUNNER:-<unset>}" \
@@ -497,8 +563,9 @@ sys.exit(0 if c else 3)
 }
 
 # serve_main — entrypoint every servers/*.sh calls after defining:
-#     CONFIG       config label (e.g. opt04a_moe_deepgemm_mega)
-#     BENCH_MODE   spec | nospec  (chat-formatted vs raw client requests)
+#     CONFIG       config label (e.g. opt07_moe_deepgemm_mega)
+#     BENCH_MODE   mtp | nonmtp  (InferenceX semantics: mtp adds --use-chat-template
+#                  on the client, and additionally runs the ShareGPT lane)
 #     SERVE_ARGS   bash array of the optimization-specific serve flags
 #
 # Default: launch the server, wait for health, stay in the foreground so you
@@ -535,7 +602,7 @@ serve_main() {
         cleanup_server
     elif [[ "${RUN_BENCH:-0}" == "1" ]]; then
         CONFIG="$CONFIG" BENCH_MODE="$BENCH_MODE" SWEEP="${SWEEP:-full}" \
-        DATASET="$DATASET" PORT="$PORT" \
+        DATASETS="${DATASETS:-}" PORT="$PORT" \
             bash "$REPO_ROOT/bench/bench.sh" --config "$CONFIG" --mode "$BENCH_MODE"
         stop_gpu_monitor 2>/dev/null || true
         cleanup_server

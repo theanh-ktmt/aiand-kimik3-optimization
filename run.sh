@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
 # run.sh - end-to-end runner for ONE configuration:
-#   launch server -> ShareGPT sweep -> tear down -> aggregate to CSV
+#   launch server -> InferenceX sweep -> tear down -> aggregate to CSV
 #   -> sync everything (metrics + CSV + JSONs + logs) to W&B.
 #
+# Which lanes run is decided by the config's BENCH_MODE (see bench/bench.sh):
+#   nonmtp -> random dataset, raw prompts
+#   mtp    -> random dataset + chat template, AND ShareGPT + chat template
+# Override with DATASETS="random" / DATASETS="sharegpt".
+#
 # Usage:
-#   bash run.sh baseline                    # full sweep (OSL 1024 + 256, conc 1..128)
-#   bash run.sh opt04a_moe_deepgemm_mega    # subset sweep (conc 1,16,128) for trials
-#   bash run.sh baseline full random        # cross-check on the random dataset
+#   bash run.sh baseline full               # full sweep (conc 1..128)
+#   bash run.sh opt05_linear_flashinfer     # subset sweep (conc 1,16,128) for trials
+#   DATASETS=sharegpt bash run.sh opt13_mtp_kimik3 full
 #
 # Positional args:
 #   $1  config name = servers/<name>.sh   (required)
 #   $2  sweep: full | subset              (default: subset)
-#   $3  dataset: sharegpt | random        (default: sharegpt)
 #
 # Durability: W&B is the off-box store for these on-demand cloud runs.
 #   WANDB=0  disable W&B sync (else needs WANDB_API_KEY; see .env)
@@ -25,9 +29,9 @@ REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
 # (CRLF) .env doesn't append '\r' to values (which silently corrupts the API key).
 [[ -f "$REPO_ROOT/.env" ]] && { set -a; source <(tr -d '\r' < "$REPO_ROOT/.env"); set +a; }
 
-NAME="${1:?usage: run.sh <config> [full|subset] [sharegpt|random]}"
+NAME="${1:?usage: run.sh <config> [full|subset]}"
 SWEEP="${2:-subset}"
-export DATASET="${3:-${DATASET:-sharegpt}}"
+export DATASETS="${DATASETS:-}"     # empty = derive from the config BENCH_MODE
 NAME="${NAME%.sh}"; NAME="${NAME#servers/}"
 SCRIPT="$REPO_ROOT/servers/$NAME.sh"
 [[ -f "$SCRIPT" ]] || { echo "ERROR: no such config: $SCRIPT"; exit 1; }
@@ -52,12 +56,12 @@ fi
 # Make sure the ShareGPT dataset is on disk BEFORE spending an hour loading 1.4 TB
 # of weights, so a missing dataset fails in seconds rather than after the server
 # is up. (bench.sh would fetch it too, but by then the cost is already sunk.)
-if [[ "$DATASET" == "sharegpt" ]]; then
+if [[ "$DATASETS" != "random" ]]; then
     bash "$REPO_ROOT/bench/get_sharegpt.sh" || { echo "ERROR: ShareGPT unavailable"; exit 1; }
 fi
 
-echo "### RUN $NAME (sweep=$SWEEP dataset=$DATASET) ###"
-RUN_BENCH=1 SWEEP="$SWEEP" DATASET="$DATASET" bash "$SCRIPT"
+echo "### RUN $NAME (sweep=$SWEEP datasets=${DATASETS:-auto}) ###"
+RUN_BENCH=1 SWEEP="$SWEEP" DATASETS="$DATASETS" bash "$SCRIPT"
 
 echo "### AGGREGATE $NAME ###"
 CSV="$REPO_ROOT/results/$NAME.csv"

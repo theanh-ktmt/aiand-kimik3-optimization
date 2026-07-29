@@ -12,14 +12,23 @@ Tracked metrics (simplified set):
 
 Identity (config, mode, ISL, OSL, conc) is parsed from the result filename
 produced by bench/bench.sh, which has two forms:
-    ShareGPT: <config>__<mode>_sharegpt_osl<OSL>_conc<CONC>.json
     Random:   <config>__<mode>_isl<ISL>_osl<OSL>_conc<CONC>.json
-where <mode> is spec | nospec (Kimi-K3 uses DSpark speculative decoding; the
-legacy mtp|nonmtp spelling is still accepted so GLM-era files parse too).
+    ShareGPT: <config>__<mode>_sharegpt_osl<OSL>_conc<CONC>.json
+where <mode> is mtp | nonmtp, matching the InferenceX method:
+    nonmtp -> random dataset, raw prompts
+    mtp    -> random dataset + chat template, plus a ShareGPT + chat template lane
+
+The two lanes are DIFFERENT MEASUREMENTS and are never merged: the Dataset column
+keeps them apart and --baseline only compares like with like (same mode, same
+dataset, same ISL/OSL/concurrency cell).
 
 For ShareGPT the input length is not fixed by the harness — it comes from the
 dataset — so the ISL column reads "sharegpt" and the real value is reported in
 "Mean ISL tok" (derived from total_input_tokens / completed).
+
+If bench.sh wrote a <result>.accept.json sidecar (spec-decode counters scraped
+from /metrics around that cell), its mean acceptance length is surfaced in the
+"Accept len" column. That is the number that actually explains an MTP result.
 
 Usage:
     python3 aggregate.py results/                       # everything under results/
@@ -34,15 +43,16 @@ import re
 import sys
 from pathlib import Path
 
-MODES = "spec|nospec|mtp|nonmtp"
+MODES = "mtp|nonmtp"
 FNAME_RE = re.compile(
     rf"^(?P<config>.+?)__(?P<mode>{MODES})_"
     r"(?:sharegpt|isl(?P<isl>\d+))_osl(?P<osl>\d+)_conc(?P<conc>\d+)$"
 )
 
 COLUMNS = [
-    "Config", "Mode", "ISL", "OSL", "Conc",
-    "Completed", "Mean ISL tok", "Output tok/s", "Total tok/s", "Out tok/s/GPU",
+    "Config", "Mode", "Dataset", "ISL", "OSL", "Conc",
+    "Completed", "Mean ISL tok", "Accept len",
+    "Output tok/s", "Total tok/s", "Out tok/s/GPU",
     "TTFT Mean", "TTFT Median", "TTFT P90",
     "TPOT Mean", "TPOT Median", "TPOT P90",
 ]
@@ -64,11 +74,22 @@ def parse_file(path: Path, num_gpus: int):
         config, mode = m["config"], m["mode"]
         # No isl group -> ShareGPT, where input length is dataset-driven.
         isl = int(m["isl"]) if m["isl"] else "sharegpt"
+        dataset = "random" if m["isl"] else "sharegpt"
         osl, conc = int(m["osl"]), int(m["conc"])
     else:
-        config, mode = stem, ""
+        config, mode, dataset = stem, "", ""
         isl = osl = ""
         conc = int(d.get("max_concurrency") or 0)
+
+    # Spec-decode acceptance sidecar written by bench.sh, if present.
+    accept = ""
+    side = path.with_name(path.name[:-len(".json")] + ".accept.json")
+    if side.is_file():
+        try:
+            with open(side, encoding="utf-8") as f:
+                accept = json.load(f).get("mean_acceptance_length", "")
+        except Exception:  # noqa: BLE001 - a broken sidecar must not drop the row
+            accept = ""
 
     out_tput = d.get("output_throughput")
     out_per_gpu = round(float(out_tput) / num_gpus, 2) if isinstance(out_tput, (int, float)) else ""
@@ -81,9 +102,11 @@ def parse_file(path: Path, num_gpus: int):
                 else "")
 
     return {
-        "Config": config, "Mode": mode, "ISL": isl, "OSL": osl, "Conc": conc,
+        "Config": config, "Mode": mode, "Dataset": dataset,
+        "ISL": isl, "OSL": osl, "Conc": conc,
         "Completed": completed if completed is not None else "",
         "Mean ISL tok": mean_isl,
+        "Accept len": accept,
         "Output tok/s": _f(d, "output_throughput"),
         "Total tok/s": _f(d, "total_token_throughput"),
         "Out tok/s/GPU": out_per_gpu,
@@ -117,7 +140,8 @@ def main():
     rows = []
     for d in args.dirs:
         for path in sorted(Path(d).rglob("*.json")):
-            if ".pytorch." in path.name:   # skip the pytorch-format sidecar
+            # Skip sidecars: the pytorch-format export and our acceptance files.
+            if ".pytorch." in path.name or path.name.endswith(".accept.json"):
                 continue
             try:
                 row = parse_file(path, args.num_gpus)
@@ -133,19 +157,21 @@ def main():
         sys.exit(1)
 
     # Stable, human-friendly ordering.
-    rows.sort(key=lambda r: (str(r["Config"]), str(r["Mode"]),
+    rows.sort(key=lambda r: (str(r["Config"]), str(r["Mode"]), str(r["Dataset"]),
                              _isl_sort_key(r["ISL"]),
                              int(r["OSL"] or 0), int(r["Conc"] or 0)))
 
     columns = list(COLUMNS)
     if args.baseline:
+        # Key includes Dataset so a ShareGPT row is never compared against a
+        # random-dataset baseline row — they are different measurements.
         base = {}
         for r in rows:
             if r["Config"] == args.baseline:
-                base[(r["Mode"], r["ISL"], r["OSL"], r["Conc"])] = r["Output tok/s"]
+                base[(r["Mode"], r["Dataset"], r["ISL"], r["OSL"], r["Conc"])] = r["Output tok/s"]
         columns.append("vs Baseline")
         for r in rows:
-            ref = base.get((r["Mode"], r["ISL"], r["OSL"], r["Conc"]))
+            ref = base.get((r["Mode"], r["Dataset"], r["ISL"], r["OSL"], r["Conc"]))
             cur = r["Output tok/s"]
             if isinstance(ref, (int, float)) and ref and isinstance(cur, (int, float)):
                 r["vs Baseline"] = f"{(cur / ref - 1) * 100:+.1f}%"
