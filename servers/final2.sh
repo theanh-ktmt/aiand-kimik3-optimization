@@ -17,16 +17,16 @@ source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
 CONFIG="${CONFIG:-final2}"
 BENCH_MODE="mtp"
 export VLLM_USE_DEEP_GEMM=1
-MOE_BACKEND="${MOE_BACKEND:-deep_gemm_mega_moe}"                     # [SCREEN] opt07
+MOE_BACKEND="${MOE_BACKEND:-deep_gemm_mega_moe}"                     # [SCREEN] opt09
 k3_base_args
 SERVE_ARGS=(
     "${K3_BASE_ARGS[@]}"
     --data-parallel-size 8
     --enable-expert-parallel
     --enable-ep-weight-filter
-    --all2all-backend flashinfer_nvlink_one_sided                     # [SCREEN] opt09
-    --mamba-backend "${MAMBA_BACKEND:-FLASHINFER}"                    # [SCREEN] opt05
-    --no-disable-hybrid-kv-cache-manager                              # [SCREEN] opt08
+    --all2all-backend flashinfer_nvlink_one_sided                     # [SCREEN] opt11
+    --mamba-backend "${MAMBA_BACKEND:-FLASHINFER}"                    # [SCREEN] opt06
+    --no-disable-hybrid-kv-cache-manager                              # [SCREEN] opt10
     --max-num-batched-tokens 16384                                    # [SCREEN] opt03
     --max-num-seqs 128                                                # [SCREEN] opt03
     --speculative-config "$(spec_config "${FINAL2_SPEC_METHOD:-dspark}" "${FINAL2_SPEC:-3}")"  # [SCREEN] run_spec_sweep

@@ -325,10 +325,10 @@ Each config writes everything to `results/<config>/`:
 
 1. Benchmark **baseline** (FULL sweep) — the reference curve.
 2. Screen each optimization with a **SUBSET** sweep and compare to baseline.
-   Decide parallelism (`opt01`/`opt02`) first — `opt09`/`opt10`/`opt11` are only
+   Decide parallelism (`opt01`/`opt02`) first — `opt11`/`opt12`/`opt13` are only
    worth running if DP8EP beat TP8.
 3. Settle the spec-decoding question with `bash run_spec_sweep.sh` (both
-   mechanisms, token counts 1..8) plus `ref_nonmtp` as the floor and `opt14` for
+   mechanisms, token counts 1..8) plus `ref_nonmtp` as the floor and `opt16` for
    the batch-gated variant. Read the printed AL curve, not throughput alone.
 4. Collect the winners into `servers/final1.sh` / `final2.sh` (replace every
    `[SCREEN]` line) and run `run_final.sh` (FULL).
@@ -338,7 +338,7 @@ Each config writes everything to `results/<config>/`:
 
 1. **Is the MXFP4 checkpoint actually multimodal?** The HF model card describes a
    MoonViT-V2 vision encoder, but InferenceX's K3 script header says "NO
-   `--language-model-only` (text-only checkpoint)". If it is text-only, `opt18` is
+   `--language-model-only` (text-only checkpoint)". If it is text-only, `opt17` is
    pointless and MMMU-Pro is N/A. Check for a vision tower in the served
    `config.json` before spending a config on it.
 2. **Thinking on or off for the quality gate?** K3 is a thinking model — its

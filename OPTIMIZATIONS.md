@@ -65,10 +65,10 @@ weight tensors" — on a 1.4 TB checkpoint that is the difference between a tole
 and an intolerable campaign wall-clock.
 
 Caveat: the recipe lists `multi_node_dep` with `strategy_min_gpus: 16`, so DP+EP on
-one node is **exploratory**. `opt09`/`opt10`/`opt11` build on it and are only worth
+one node is **exploratory**. `opt11`/`opt12`/`opt13` build on it and are only worth
 running if `opt02` beat `opt01`.
 
-### 3–4. Batching  (`opt03_hyperparams`, `opt05_perf_mode_throughput`)
+### 3–5. Batching and memory  (`opt03_hyperparams`, `opt04_gpumem090`, `opt05_perf_mode_throughput`)
 
 `opt03` = `--max-num-seqs 512` + `--max-num-batched-tokens 16384` +
 `--max-cudagraph-capture-size 512`. The 32-sequence cap is the
@@ -78,12 +78,18 @@ DSpark on**. 16384 matches the recipe's TEP prefill profile. The capture-size pi
 exists because "a 93-layer 2.8T model makes capturing vLLM's full 2048-wide ladder
 prohibitively slow" (their words).
 
-`opt04` = `--performance-mode throughput`, a single high-level switch this build
+`opt04` = `--gpu-memory-utilization` 0.90 instead of the preset's 0.95. Not an
+optimization on its own — 2 points of 288 GiB is ~14 GB/GPU of KV cache given up,
+so it should lose — but it is what InferenceX's own K3 scripts run, and it is the
+value to pair with `opt03` if the big sequence cap OOMs at 0.95. Screen it next to
+`opt03` for exactly that reason.
+
+`opt05` = `--performance-mode throughput`, a single high-level switch this build
 exposes: "larger CUDA graphs, more aggressive batching, throughput-oriented
-kernels". It deliberately overlaps `opt03` and `opt16` — if one switch matches the
+kernels". It deliberately overlaps `opt03` and `opt15` — if one switch matches the
 hand-tuned configs, the hand-tuning is not worth maintaining.
 
-### 5. KDA / linear-attention kernel  (`opt06_linear_flashinfer`)  ← **likely the biggest win**
+### 6. KDA / linear-attention kernel  (`opt06_linear_flashinfer`)  ← **likely the biggest win**
 
 `--mamba-backend TRITON → FLASHINFER`. `MambaBackendEnum = TRITON (default),
 FLASHINFER, CPU`. This is the kernel for the 69 KDA layers, i.e. **74% of the
@@ -95,31 +101,31 @@ Adjacent knobs, left out to keep this a single-variable test:
 `--kernel-config '{"linear_backend": …}'` (defaults to `'auto'`; the valid values
 are not listed in `--help`, so probe before use).
 
-### 6 + 19. MLA kernels  (`opt07_attn_flashmla`, `opt08_mla_prefill_flashinfer`)
+### 7 + 8. MLA kernels  (`opt07_attn_flashmla`, `opt08_mla_prefill_flashinfer`)
 
-`opt06` = `--attention-backend FLASHMLA`, the **decode** kernel for the 24 Gated MLA
+`opt07` = `--attention-backend FLASHMLA`, the **decode** kernel for the 24 Gated MLA
 layers. Alternatives in this build: `FLASHINFER_MLA` (what the recipe pins for the
 DSpark verify step), `CUTLASS_MLA`, `TRITON_MLA`, `FLASH_ATTN_MLA`. The `*_SPARSE`
 variants are for sparse-MLA models (DeepSeek DSA / GLM-5.2) — wrong for K3 gated MLA.
 
-`opt19` = the **prefill** kernel, and it exists because the two credible sources
+`opt08` = the **prefill** kernel, and it exists because the two credible sources
 **disagree**: the recipe yaml says `mla_prefill_backend: TRTLLM_RAGGED`, while both
 InferenceX Kimi-K3 B300 scripts say `FLASHINFER` ("MLA prefill runs on FlashInfer
 per the production recipe"). One of them is stale; a subset sweep settles it. Watch
 TTFT, not output throughput.
 
-### 7. MoE backend  (`opt09_moe_deepgemm_mega`)
+### 9. MoE backend  (`opt09_moe_deepgemm_mega`)
 
 `auto → deep_gemm_mega_moe`. The recipe recommends it explicitly for any
 expert-parallel deployment and hardcodes it in its own decode profile.
 
-### 8. Hybrid KV cache manager  (`opt10_hybrid_kv`)
+### 10. Hybrid KV cache manager  (`opt10_hybrid_kv`)
 
 `--no-disable-hybrid-kv-cache-manager`. More KV capacity → bigger batch →
 throughput, and the recipe enables it on both prefill and decode workers in its P/D
 profile.
 
-### 9–11. Expert-parallel communication and balancing (DP8EP only)
+### 11–13. Expert-parallel communication and balancing (DP8EP only)
 
 * `opt11_a2a_nvlink_one_sided` — `flashinfer_nvlink_one_sided`, the recipe's
   explicit NVLink recommendation and what its decode profile hardcodes.
@@ -143,7 +149,7 @@ hand-picked point:
 | `spec_dspark_<1..8>` / `baseline` (7) | external DSpark draft model | `Inferact/Kimi-K3-DSpark` |
 | `opt16_spec_disable_bs64` | DSpark(7) for batch 1–64, **off** above 64 | as above |
 
-`opt14` encodes the core trade-off discretely: spec decoding is a latency win at
+`opt16` encodes the core trade-off discretely: spec decoding is a latency win at
 small batch and a throughput **tax** once the GPU is saturated, because every
 rejected draft token is compute a real request could have used. The sweep measures
 the same trade-off continuously, and it is why acceptance must be read alongside
@@ -154,7 +160,7 @@ This mirrors InferenceX's own K3 collector (`MTP_LIST="1 2 3 4 5 6 7 8"`, one se
 per value, `AL = 1 + accepted/drafts` from `/metrics`), extended with
 per-concurrency throughput and with the second mechanism.
 
-### 15–18. Runtime
+### 14–17. Runtime
 
 * `opt14_async_scheduling` — "avoids gaps in GPU utilization"; default is
   engine-decides, so pinning it on is free to try. Matters most here because 93
@@ -176,14 +182,14 @@ ways that changed this repo:
 
 | Setting | Recipe yaml | InferenceX K3 scripts | This repo |
 |---|---|---|---|
-| `mla_prefill_backend` | `TRTLLM_RAGGED` | `FLASHINFER` | baseline follows the recipe; `opt19` tests theirs |
+| `mla_prefill_backend` | `TRTLLM_RAGGED` | `FLASHINFER` | baseline follows the recipe; `opt08` tests theirs |
 | `--load-format` | `fastsafetensors` | `fastsafetensors` | `fastsafetensors` (proven to resolve) |
 | `--max-num-seqs` | 32 (DSpark VRAM) | **512** / `2*CONC` | `opt03` tests 512 |
-| `--max-cudagraph-capture-size` | — | pinned to `--max-num-seqs` | same, in `opt03` / `opt16` |
+| `--max-cudagraph-capture-size` | — | pinned to `--max-num-seqs` | same, in `opt03` / `opt15` |
 | `--gpu-memory-utilization` | 0.95 | 0.90 | 0.95, with 0.90 as the OOM fallback |
 | `--disable-uvicorn-access-log` | — | yes | yes (in `common.sh`) |
 | prefix caching | enabled | enabled | **always off**, no override (settled 2026-07-29) |
-| `VLLM_USE_RUST_FRONTEND` | "can be enabled" | always 1 | only in `opt17`, so we can price it |
+| `VLLM_USE_RUST_FRONTEND` | "can be enabled" | always 1 | adopted into the base preset, not screened |
 | extra env | — | `NCCL_DMABUF_ENABLE=0`, `PYTHONNOUSERSITE=1`, `VLLM_HTTP_TIMEOUT_KEEP_ALIVE=900` | adopted in `k3_env_defaults` |
 | DSpark JSON | + `draft_sample_method` / `rejection_sample_method` | omits both (separate variant script has them) | we send the recipe form |
 | EP | — | explicitly **not wired** (`EP_SIZE>1` rejected) | `opt01`/`opt02` are ours, and exploratory |
@@ -195,7 +201,7 @@ directly comparable.
 
 Also worth knowing: their K3 header calls the checkpoint **text-only** ("NO
 `--language-model-only` (text-only checkpoint)") and treats K3 as a *thinking*
-model, collecting acceptance only for `thinking=on`. Both bear on `opt18` and on the
+model, collecting acceptance only for `thinking=on`. Both bear on `opt17` and on the
 quality gate — see the open questions in README.
 
 ## Cut from the sweep (and why)
@@ -205,8 +211,8 @@ is lost — only the cost of a separate 1.4 TB server load.
 
 | Cut | Why |
 |---|---|
-| `opt01c_tp4dp2ep` (TP4×DP2) | TP8 and DP8 bracket the space; a hybrid only matters if both extremes are close |
-| `--gpu-memory-utilization 0.97` | ~2 pts of headroom, real OOM risk at conc=128, low upside next to `--max-num-seqs`. The *downward* direction (0.90, what InferenceX runs) is tested instead, as `opt22` |
+| a TP4×DP2 hybrid parallelism arm | TP8 and DP8 bracket the space; a hybrid only matters if both extremes are close |
+| `--gpu-memory-utilization 0.97` | ~2 pts of headroom, real OOM risk at conc=128, low upside next to `--max-num-seqs`. The *downward* direction (0.90, what InferenceX runs) is tested instead, as `opt04` |
 | `--kv-cache-dtype auto` (bf16) | doubles KV footprint; expected to lose, and FP8 KV is what the recipe validated |
 | MoE `flashinfer_trtllm` / `cutlass` / `triton` | the recipe names one recommended backend; the rest are fallbacks, reachable via `MOE_BACKEND=` |
 | 5 of 6 all2all backends | one node is all-NVLink, so the recipe's NVLink pick is the only strong candidate; reachable via `A2A_BACKEND=` |
@@ -214,7 +220,7 @@ is lost — only the cost of a separate 1.4 TB server load.
 | fixed DSpark points (the old opt12 / opt13) | replaced by `run_spec_sweep.sh`, which sweeps 1..8 for both mechanisms — strictly more informative at the same per-launch cost |
 | `draft_sample_method greedy` | one extra `DRAFT_SAMPLE_METHOD=greedy` run on top of the winning token count |
 | `cudagraph_mode FULL_AND_PIECEWISE` | reachable via `CUDAGRAPH_MODE=` |
-| Model Runner v2 and Rust frontend separately | bundled in `opt17` |
+| Model Runner v2 / Rust frontend / tail fusion / FlashInfer allreduce | all four are in the base preset, so there is nothing to screen — see the preset table in README |
 
 ## Out of scope
 

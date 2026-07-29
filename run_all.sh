@@ -20,9 +20,9 @@
 #     biggest lever on total campaign time. (The recipe says `fastsafetensors`,
 #     but that value does not exist in this image; see common.sh.)
 #   * With expert parallelism, --enable-ep-weight-filter makes each rank read only
-#     its own expert shard from disk — already set in opt01/opt02/opt09/opt10/opt11.
+#     its own expert shard from disk — already set in opt01/opt02/opt11/opt12/opt13.
 #   * Screen in stages with --only, deciding the parallelism group (opt01/opt02)
-#     first. opt09/opt10/opt11 are only worth running if DP8EP beat TP8.
+#     first. opt11/opt12/opt13 are only worth running if DP8EP beat TP8.
 #   * For a group that shares one server config (e.g. the DSpark token sweep),
 #     consider launching the server once by hand and re-running bench/bench.sh
 #     against it instead of paying the reload each time.
@@ -92,10 +92,15 @@ reap_gpu() {
     echo "WARN: GPU still >2000 MiB used after reap — next config may OOM." >&2
 }
 
-# Screening order, trimmed to the high-potential knobs only (OPTIMIZATIONS.md
-# records what was cut and why). Decide the parallelism choice (opt01/opt02)
-# first: the DP8EP-only opts (opt09 a2a / opt10 EPLB / opt11 DBO) come after it
-# and are only worth running if DP8EP actually beat TP8.
+# Screening order. Every entry is either a flag the BASE PRESET does not set, or
+# the same flag at a DIFFERENT VALUE — nothing here re-tests a preset item in the
+# direction it is already set, because that would spend a ~1.4 TB launch on a
+# decision nobody will revisit. OPTIMIZATIONS.md records what was cut and why.
+#
+# Decide the parallelism choice (opt01/opt02) first: the DP8EP-only opts
+# (opt11 a2a / opt12 EPLB / opt13 DBO) come after it and are only worth running if
+# DP8EP actually beat TP8. The speculative-decoding token count is NOT here — it
+# has its own sweep (run_spec_sweep.sh) because it needs one launch per value.
 ALL_CONFIGS=(
     baseline
     opt01_tp8ep opt02_dp8ep

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# Opt 2 — Parallelism: DP8 attention + Expert Parallel. Base for opt09 (all2all),
-# opt10 (EPLB) and opt11 (DBO) — only run those if this one beats TP8.
+# Opt 2 — Parallelism: DP8 attention + Expert Parallel. Base for opt11 (all2all),
+# opt12 (EPLB) and opt13 (DBO) — only run those if this one beats TP8.
 #
 # NOTE: the recipe lists multi_node_dep with strategy_min_gpus 16, i.e. DEP is
 # officially a >=2-node strategy. Running it on a single 8x B300 node is

@@ -223,7 +223,7 @@ if [[ -n "$HELP_ALL" ]]; then
     # Values passed via env-var indirection consumed by k3_base_args / defaults.
     for v in auto deep_gemm_mega_moe; do check_choice --moe-backend "$v"; done
     for v in auto fp8;               do check_choice --kv-cache-dtype "$v"; done
-    # --performance-mode default in opt04 comes from ${PERF_MODE:-throughput}.
+    # --performance-mode default in opt05 comes from ${PERF_MODE:-throughput}.
     check_choice --performance-mode throughput
     # --load-format is a free-form string in this build, so a bad value fails only
     # at runtime. Verify ours appears in the help text.
@@ -266,10 +266,10 @@ def show(mod, name, want):
           + (f"MISSING {missing}" if missing else "all required present"))
     print(f"       available: {', '.join(names)}")
 
-# opt06 uses FLASHMLA; the DSpark verify step uses FLASHINFER_MLA.
+# opt07 uses FLASHMLA; the DSpark verify step uses FLASHINFER_MLA.
 show("vllm.v1.attention.backends.registry", "AttentionBackendEnum",
      ["FLASHMLA", "FLASHINFER_MLA"])
-# opt05 uses FLASHINFER for the 69 KDA layers.
+# opt06 uses FLASHINFER for the 69 KDA layers.
 for mod in ("vllm.config.mamba", "vllm.config.cache", "vllm.config"):
     try:
         importlib.import_module(mod).MambaBackendEnum
@@ -279,7 +279,7 @@ for mod in ("vllm.config.mamba", "vllm.config.cache", "vllm.config"):
         continue
 else:
     print("  WARN MambaBackendEnum: not found — verify --mamba-backend values by hand")
-# opt16 uses FULL_DECODE_ONLY.
+# opt15 uses FULL_DECODE_ONLY.
 show("vllm.config", "CUDAGraphMode", ["FULL_DECODE_ONLY", "FULL_AND_PIECEWISE"])
 PY
     # --spec-method must offer BOTH mechanisms we compare (dspark vs in-model MTP).

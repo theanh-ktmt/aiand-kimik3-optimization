@@ -214,8 +214,9 @@ k3_env_defaults() {
     export VLLM_ALLREDUCE_USE_FLASHINFER="${VLLM_ALLREDUCE_USE_FLASHINFER:-1}"
     export VLLM_ENGINE_READY_TIMEOUT_S="${VLLM_ENGINE_READY_TIMEOUT_S:-3600}"
     # Model Runner v2 + Rust frontend are part of the BASE PRESET (they are in the
-    # team's docker launch command), not optimizations to be switched on. The
-    # informative experiment is therefore turning them OFF — see opt17.
+    # team's docker launch command). They are therefore NOT screened at all — not
+    # on (already on) and not off either, since flipping a setting the team has
+    # committed to would spend a ~1.4 TB launch on a decision nobody will revisit.
     export VLLM_USE_V2_MODEL_RUNNER="${VLLM_USE_V2_MODEL_RUNNER:-1}"
     export VLLM_USE_RUST_FRONTEND="${VLLM_USE_RUST_FRONTEND:-1}"
     export NCCL_DMABUF_ENABLE="${NCCL_DMABUF_ENABLE:-0}"
@@ -231,7 +232,7 @@ k3_env_defaults() {
 #                 draft-sampling and rejection-sampling methods.
 #   kimi_k3_mtp   an in-model MTP head, the same shape of mechanism GLM-5.2 used.
 #                 The recipe never mentions it, but the engine supports it — and
-#                 comparing the two is the whole point of the opt13 config.
+#                 comparing the two is the whole point of run_spec_sweep.sh.
 #
 # Builders below; both emit a --speculative-config JSON.
 #

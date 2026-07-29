@@ -5,7 +5,7 @@
 # A single high-level switch this build exposes: per the help, "throughput favors
 # aggregate tokens/sec at high concurrency (larger CUDA graphs, more aggressive
 # batching, throughput-oriented kernels)". It therefore overlaps opt03 (batching)
-# and opt16 (CUDA graphs) on purpose — if this one config matches or beats them,
+# and opt15 (CUDA graphs) on purpose — if this one config matches or beats them,
 # the tuned configs are not worth the extra maintenance.
 #
 # Run --performance-mode interactivity too (PERF_MODE=interactivity) if the

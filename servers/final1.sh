@@ -7,11 +7,11 @@
 # must be replaced with the actual winner from results/all.csv before this is
 # presented as a recommendation.
 #
-#   [SCREEN] KDA/linear kernel        opt05   <- highest expected value (69/93 layers)
-#   [SCREEN] hybrid KV manager        opt08
-#   [SCREEN] batching hyperparams     opt03 / opt04
-#   [SCREEN] spec method + tokens     run_spec_sweep.sh / opt14 / ref_nonmtp
-#   [SCREEN] async scheduling         opt15
+#   [SCREEN] KDA/linear kernel        opt06   <- highest expected value (69/93 layers)
+#   [SCREEN] hybrid KV manager        opt10
+#   [SCREEN] batching hyperparams     opt03 / opt05
+#   [SCREEN] spec method + tokens     run_spec_sweep.sh / opt16 / ref_nonmtp
+#   [SCREEN] async scheduling         opt14
 # ---------------------------------------------------------------------------
 source "$(cd "$(dirname "$0")/.." && pwd)/common.sh"
 CONFIG="${CONFIG:-final1}"
@@ -20,9 +20,9 @@ k3_base_args
 SERVE_ARGS=(
     "${K3_BASE_ARGS[@]}"
     --tensor-parallel-size 8
-    --mamba-backend "${MAMBA_BACKEND:-FLASHINFER}"                   # [SCREEN] opt05
-    --no-disable-hybrid-kv-cache-manager                             # [SCREEN] opt08
-    --async-scheduling                                               # [SCREEN] opt15
+    --mamba-backend "${MAMBA_BACKEND:-FLASHINFER}"                   # [SCREEN] opt06
+    --no-disable-hybrid-kv-cache-manager                             # [SCREEN] opt10
+    --async-scheduling                                               # [SCREEN] opt14
     --max-num-batched-tokens 16384                                   # [SCREEN] opt03
     --max-num-seqs 128                                               # [SCREEN] opt03
     --speculative-config "$(spec_config "${FINAL1_SPEC_METHOD:-dspark}" "${FINAL1_SPEC:-3}")"  # [SCREEN] run_spec_sweep

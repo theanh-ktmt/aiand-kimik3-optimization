@@ -10,18 +10,20 @@ direction it is already set — see
 
 Every script carries:
 
-* the mandatory harness flags from `common.sh` —
-  `--no-enable-prefix-caching`, `--trust-remote-code`, `--max-model-len 16384`,
+* the base-preset serve flags from `common.sh` — `--trust-remote-code`,
   `--load-format fastsafetensors`, `--disable-uvicorn-access-log`,
   `--tool-call-parser kimi_k3`, `--enable-auto-tool-choice`,
-  `--reasoning-parser kimi_k3`
-* the recipe-mandated Kimi-K3 base block `"${K3_BASE_ARGS[@]}"` (from
-  `k3_base_args`) —
+  `--reasoning-parser kimi_k3`, plus the two harness deviations
+  `--no-enable-prefix-caching` and `--max-model-len 16384`
+* the base-preset block `"${K3_BASE_ARGS[@]}"` (from `k3_base_args`) —
   `--gpu-memory-utilization 0.95`, `--moe-backend auto`,
   `--no-enable-flashinfer-autotune`, `--kv-cache-dtype fp8`,
   `--attention-config '{"mla_prefill_backend":"TRTLLM_RAGGED","use_prefill_query_quantization":true}'`
-  plus env `VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION=1`,
-  `VLLM_ALLREDUCE_USE_FLASHINFER=1`, `VLLM_ENGINE_READY_TIMEOUT_S=3600`
+* the base-preset env (from `k3_env_defaults`) —
+  `VLLM_ENABLE_K3_LATENT_MOE_TAIL_FUSION=1`, `VLLM_ALLREDUCE_USE_FLASHINFER=1`,
+  `VLLM_USE_V2_MODEL_RUNNER=1`, `VLLM_USE_RUST_FRONTEND=1`,
+  `VLLM_ENGINE_READY_TIMEOUT_S=3600`, and InferenceX's `NCCL_DMABUF_ENABLE=0`,
+  `PYTHONNOUSERSITE=1`, `VLLM_HTTP_TIMEOUT_KEEP_ALIVE=900`
 
 A config overrides a base value either by setting the matching variable before
 `k3_base_args` (`MOE_BACKEND`, `KV_CACHE_DTYPE`, `ATTENTION_CONFIG`,
@@ -53,27 +55,27 @@ speculative decoding. The two `mtp` lanes are separate rows in the CSV
 
 | # | Script | Optimization | Key flags added / changed | Bench |
 |---|--------|--------------|---------------------------|-------|
-| 0 | `baseline.sh` | **Baseline (Day 0)** — published recipe | `--tensor-parallel-size 8 --max-num-seqs 32` + DSpark(7) | mtp |
+| 0 | `baseline.sh` | **Baseline (Day 0)** — base preset + the recipe's opt-in spec_decoding | `--tensor-parallel-size 8 --max-num-seqs 32` + DSpark(7) | mtp |
 | 1 | `opt01_tp8ep.sh` | Parallelism: TP8 + EP | `--enable-expert-parallel --enable-ep-weight-filter` | mtp |
-| 2 | `opt02_dp8ep.sh` | Parallelism: DP8 + EP | `--data-parallel-size 8 --enable-expert-parallel --enable-ep-weight-filter` (base for 9/10/11) | mtp |
+| 2 | `opt02_dp8ep.sh` | Parallelism: DP8 + EP | `--data-parallel-size 8 --enable-expert-parallel --enable-ep-weight-filter` (base for 11/12/13) | mtp |
 | 3 | `opt03_hyperparams.sh` | Batching | `--max-num-batched-tokens 16384 --max-num-seqs 512 --max-cudagraph-capture-size 512` | mtp |
-| 4 | `opt05_perf_mode_throughput.sh` | High-level mode | `--performance-mode throughput` | mtp |
-| 5 | `opt06_linear_flashinfer.sh` | **KDA / linear kernel (69 of 93 layers)** | `--mamba-backend FLASHINFER` (default is TRITON) | mtp |
-| 6 | `opt07_attn_flashmla.sh` | MLA kernel (24 layers) | `--attention-backend FLASHMLA` | mtp |
-| 19 | `opt08_mla_prefill_flashinfer.sh` | MLA **prefill** kernel — settles a source conflict | `mla_prefill_backend: FLASHINFER` (recipe says `TRTLLM_RAGGED`, InferenceX uses `FLASHINFER`) | mtp |
-| 7 | `opt09_moe_deepgemm_mega.sh` | MoE backend | `MOE_BACKEND=deep_gemm_mega_moe` + `VLLM_USE_DEEP_GEMM=1` | mtp |
-| 8 | `opt10_hybrid_kv.sh` | **Hybrid KV manager** (KDA + MLA) | `--no-disable-hybrid-kv-cache-manager` | mtp |
-| 9 | `opt11_a2a_nvlink_one_sided.sh` | (DP8EP) All2All | `--all2all-backend flashinfer_nvlink_one_sided` | mtp |
-| 10 | `opt12_eplb.sh` | (DP8EP) Expert load balancing | `--enable-eplb --eplb-config '{…,"num_redundant_experts":${EPLB_REDUNDANT:-32}}' --expert-placement-strategy` | mtp |
-| 11 | `opt13_dbo.sh` | (DP8EP) Dual-batch overlap | `--enable-dbo --dbo-decode-token-threshold … --dbo-prefill-token-threshold …` | mtp |
-| — | `spec.sh` | **Speculative-decoding sweep** (parameterized) | `SPEC_METHOD` = dspark / kimi_k3_mtp / none, times `SPEC_TOKENS=n`; driven by `run_spec_sweep.sh`, one label per point | mtp (nonmtp when none) |
-| 14 | `opt16_spec_disable_bs64.sh` | Batch-gated spec decoding | DSpark(7) for batch 1–64, off above 64 | mtp |
-| 15 | `opt14_async_scheduling.sh` | Scheduler | `--async-scheduling` | mtp |
-| 16 | `opt15_cudagraph_decode_only.sh` | CUDA graph | `--compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' --max-num-seqs 128 --max-cudagraph-capture-size 128` | mtp |
-| 22 | `opt04_gpumem090.sh` | GPU memory fraction | `--gpu-memory-utilization 0.90` (preset is 0.95; InferenceX uses 0.90) | mtp |
-| 18 | `opt17_language_model_only.sh` | Skip multimodal path | `--language-model-only` | mtp |
+| 4 | `opt04_gpumem090.sh` | GPU memory fraction — *different value* | `--gpu-memory-utilization 0.90` (preset is 0.95; InferenceX runs 0.90) | mtp |
+| 5 | `opt05_perf_mode_throughput.sh` | High-level mode | `--performance-mode throughput` | mtp |
+| 6 | `opt06_linear_flashinfer.sh` | **KDA / linear kernel — 69 of 93 layers** | `--mamba-backend FLASHINFER` (default is TRITON) | mtp |
+| 7 | `opt07_attn_flashmla.sh` | MLA **decode** kernel (24 layers) | `--attention-backend FLASHMLA` | mtp |
+| 8 | `opt08_mla_prefill_flashinfer.sh` | MLA **prefill** kernel — settles a source conflict | `mla_prefill_backend: FLASHINFER` (recipe says `TRTLLM_RAGGED`, InferenceX uses `FLASHINFER`) | mtp |
+| 9 | `opt09_moe_deepgemm_mega.sh` | MoE backend — *different value* | `MOE_BACKEND=deep_gemm_mega_moe` + `VLLM_USE_DEEP_GEMM=1` | mtp |
+| 10 | `opt10_hybrid_kv.sh` | **Hybrid KV manager** (KDA + MLA) | `--no-disable-hybrid-kv-cache-manager` | mtp |
+| 11 | `opt11_a2a_nvlink_one_sided.sh` | (DP8EP) All2All | `--all2all-backend flashinfer_nvlink_one_sided` | mtp |
+| 12 | `opt12_eplb.sh` | (DP8EP) Expert load balancing | `--enable-eplb --eplb-config '{…,"num_redundant_experts":${EPLB_REDUNDANT:-32}}' --expert-placement-strategy` | mtp |
+| 13 | `opt13_dbo.sh` | (DP8EP) Dual-batch overlap | `--enable-dbo --dbo-decode-token-threshold … --dbo-prefill-token-threshold …` | mtp |
+| 14 | `opt14_async_scheduling.sh` | Scheduler | `--async-scheduling` | mtp |
+| 15 | `opt15_cudagraph_decode_only.sh` | CUDA graph | `--compilation-config '{"cudagraph_mode":"FULL_DECODE_ONLY"}' --max-num-seqs 128 --max-cudagraph-capture-size 128` | mtp |
+| 16 | `opt16_spec_disable_bs64.sh` | Batch-gated spec decoding | DSpark(7) for batch 1–64, off above 64 | mtp |
+| 17 | `opt17_language_model_only.sh` | Skip the multimodal path | `--language-model-only` | mtp |
+| — | `spec.sh` | **Speculative-decoding sweep** (parameterized) | `SPEC_METHOD` = dspark / kimi_k3_mtp / none, times `SPEC_TOKENS=n`, optional `DRAFT_SAMPLE_METHOD`; driven by `run_spec_sweep.sh`, one label per point | mtp (nonmtp when none) |
 | — | `ref_nonmtp.sh` | **The base preset verbatim** — no drafting, no `--max-num-seqs` | (preset only) | **nonmtp** |
-| — | `final1.sh` | **Proposed #1 (TP8)** — placeholder | KDA FLASHINFER + hybrid KV + async sched + batching + DSpark(3) + Model Runner v2 | mtp |
+| — | `final1.sh` | **Proposed #1 (TP8)** — placeholder | KDA FLASHINFER + hybrid KV + async sched + batching + DSpark(3) | mtp |
 | — | `final2.sh` | **Proposed #2 (DP8EP)** — placeholder | as final1 but DP8EP + `flashinfer_nvlink_one_sided` + `deep_gemm_mega_moe` | mtp |
 
 `final1.sh` / `final2.sh` are **placeholders**: every line marked `[SCREEN]` must
@@ -91,7 +93,7 @@ This is the question the campaign exists to answer, and it needs three configs:
 |---|---|---|
 | `ref_nonmtp` (or `spec_none`) | none | — |
 | `spec_kimi_k3_mtp_<n>` | in-model MTP head (`kimi_k3_mtp`) | none |
-| `baseline` / `spec_dspark_<n>` / `opt14` | external draft model (`dspark`) | `Inferact/Kimi-K3-DSpark` |
+| `baseline` / `spec_dspark_<n>` / `opt16` | external draft model (`dspark`) | `Inferact/Kimi-K3-DSpark` |
 
 Run it with `bash run_spec_sweep.sh` — it sweeps the token count for both
 mechanisms and prints the acceptance-length-vs-throughput curve. `spec_none` is the
@@ -150,7 +152,8 @@ applies — opt in with `RUN_MMMU=1`. `quality_check.sh` refuses to run it again
   mori_low_latency, naive, nixl_ep, pplx`. The recipe names
   `flashinfer_nvlink_one_sided` for NVLink (single node) and `deepep_v2` for RDMA
   (cross-node, needs `UCX_TLS="rc,cuda_copy"`).
-- **`--spec-method`** offers both `dspark` and `kimi_k3_mtp` — the basis of opt13.
+- **`--spec-method`** offers both `dspark` and `kimi_k3_mtp` — the two mechanisms
+  swept by `run_spec_sweep.sh`.
 - **FP8 KV cache**: whenever `--kv-cache-dtype fp8` is set, the recipe requires
   `--attention-config '{"use_prefill_query_quantization":true}'`. The base block
   does this.
@@ -193,7 +196,7 @@ model + hardware, and they are worth reading before trusting anything here:
   — agentic trace replay on the same production serve profile.
 
 Where they differ from the recipe yaml, this repo now follows **them** for
-`mla_prefill_backend` (as `opt19`), `--load-format`, `--disable-uvicorn-access-log`,
+`mla_prefill_backend` (as `opt08`), `--load-format`, `--disable-uvicorn-access-log`,
 `--max-cudagraph-capture-size`, the `--max-num-seqs 512` candidate, and the
 `NCCL_DMABUF_ENABLE` / `PYTHONNOUSERSITE` / `VLLM_HTTP_TIMEOUT_KEEP_ALIVE`
 environment. Three of their choices are deliberately NOT adopted:
@@ -202,4 +205,4 @@ environment. Three of their choices are deliberately NOT adopted:
 |---|---|---|
 | `--enable-prefix-caching` | **always off, no override** | cache hits mask prefill cost, which defeats a configuration comparison. Settled 2026-07-29; a non-zero `PREFIX_CACHING` now fails the launch. |
 | `--gpu-memory-utilization 0.90` | 0.95 (recipe) | 0.95 is the recipe base_args value; drop to 0.90 if a big `--max-num-seqs` OOMs. |
-| `VLLM_USE_RUST_FRONTEND=1` always on | only in `opt17` | we want to measure what it is worth before adopting it. |
+| `VLLM_USE_RUST_FRONTEND=1` always on | same — part of the base preset | adopted, and deliberately not screened. |

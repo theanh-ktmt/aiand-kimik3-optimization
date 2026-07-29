@@ -2,7 +2,7 @@
 # ---------------------------------------------------------------------------
 # Opt 6 — MLA attention kernel: --attention-backend FLASHMLA.
 #
-# Only affects the 24 Gated MLA layers (the other 69 are KDA — see opt05).
+# Only affects the 24 Gated MLA layers (the other 69 are KDA — see opt06).
 # Uses the CLI flag rather than VLLM_ATTENTION_BACKEND so preflight can verify it
 # and it lands in the launch command recorded at the head of server.log.
 #
